@@ -1,0 +1,908 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stage 3 Architecture Explainer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f8f7;
+        --ink: #172026;
+        --muted: #5f6e75;
+        --panel: #ffffff;
+        --line: #d7e0df;
+        --accent: #c84b31;
+        --teal: #197b75;
+        --gold: #bd7f1c;
+        --blue: #3267a8;
+        --green: #477a42;
+        --rose: #b94c64;
+        --soft-accent: #f6ded6;
+        --soft-teal: #d9efec;
+        --soft-gold: #f7e7c5;
+        --soft-blue: #dce8f7;
+        --soft-green: #dfecd9;
+        --shadow: 0 18px 45px rgba(23, 32, 38, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        min-height: 2.3rem;
+        border: 1px solid #b8c5c4;
+        border-radius: 6px;
+        background: #ffffff;
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.7rem, 3vw, 2.45rem);
+        line-height: 1.05;
+      }
+
+      h2 {
+        font-size: 1.16rem;
+      }
+
+      h3 {
+        font-size: 0.98rem;
+      }
+
+      .shell {
+        width: min(1260px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 24px 0 34px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        padding-bottom: 18px;
+      }
+
+      .muted,
+      .topbar p {
+        color: var(--muted);
+      }
+
+      .inline-code,
+      code {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #f8faf9;
+        padding: 3px 6px;
+        color: #30424a;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.84rem;
+      }
+
+      .architecture {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .block {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+        min-height: 430px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        padding: 14px;
+      }
+
+      .block-header {
+        display: grid;
+        gap: 5px;
+        min-height: 98px;
+      }
+
+      .block-header p {
+        color: var(--muted);
+        font-size: 0.84rem;
+        line-height: 1.36;
+      }
+
+      .shape {
+        display: inline-block;
+        width: fit-content;
+        color: #30424a;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.8rem;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(18px, 1fr));
+        grid-template-rows: repeat(7, minmax(18px, 1fr));
+        aspect-ratio: 1 / 1;
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #edf2f1;
+        overflow: hidden;
+      }
+
+      .board.padded-board {
+        grid-template-columns: repeat(9, minmax(16px, 1fr));
+        grid-template-rows: repeat(9, minmax(16px, 1fr));
+      }
+
+      .cell {
+        position: relative;
+        display: grid;
+        min-width: 0;
+        place-items: center;
+        border-right: 1px solid rgba(23, 32, 38, 0.07);
+        border-bottom: 1px solid rgba(23, 32, 38, 0.07);
+        color: var(--muted);
+        font-size: 0.64rem;
+      }
+
+      .cell.pad {
+        background:
+          repeating-linear-gradient(
+            45deg,
+            #f8faf9,
+            #f8faf9 6px,
+            #eef3f2 6px,
+            #eef3f2 12px
+          );
+        color: #9aa8a7;
+        font-size: 0.58rem;
+      }
+
+      .cell.pad::after {
+        content: "0";
+      }
+
+      .cell.dot::after {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #101820;
+        content: "";
+      }
+
+      .cell.edge-h::after,
+      .cell.edge-v::after {
+        border-radius: 999px;
+        content: "";
+      }
+
+      .cell.edge-h::after {
+        width: 78%;
+        height: 7px;
+      }
+
+      .cell.edge-v::after {
+        width: 7px;
+        height: 78%;
+      }
+
+      .cell.available::after {
+        background: #cfd9d8;
+      }
+
+      .cell.drawn-p0::after {
+        background: var(--blue);
+      }
+
+      .cell.drawn-p1::after {
+        background: var(--gold);
+      }
+
+      .cell.box {
+        font-weight: 700;
+      }
+
+      .cell.box.p0 {
+        background: var(--soft-blue);
+        color: var(--blue);
+      }
+
+      .cell.box.p1 {
+        background: var(--soft-gold);
+        color: #81540f;
+      }
+
+      .cell.kernel,
+      .cell.receptive {
+        background: #fff8ed;
+      }
+
+      .cell.kernel::before,
+      .cell.receptive::before {
+        position: absolute;
+        inset: 3px;
+        border: 2px solid var(--accent);
+        border-radius: 6px;
+        content: "";
+        pointer-events: none;
+      }
+
+      .cell.center::before {
+        border-color: var(--teal);
+      }
+
+      .cell.policy-pick::before {
+        position: absolute;
+        inset: 3px;
+        border: 3px solid var(--accent);
+        border-radius: 6px;
+        content: "";
+      }
+
+      .cell.policy-legal::after {
+        box-shadow: 0 0 0 3px rgba(25, 123, 117, 0.25);
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        min-height: 26px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 3px 7px;
+        color: var(--muted);
+        font-size: 0.76rem;
+      }
+
+      .swatch {
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+        background: var(--line);
+      }
+
+      .control-stack {
+        display: grid;
+        gap: 9px;
+      }
+
+      .slider-row {
+        display: grid;
+        gap: 5px;
+      }
+
+      .slider-row label {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      .readout {
+        display: grid;
+        gap: 6px;
+      }
+
+      .readout-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 7px 8px;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .readout-row strong {
+        color: var(--ink);
+      }
+
+      .shape-flow {
+        display: grid;
+        gap: 8px;
+      }
+
+      .tensor-card {
+        display: grid;
+        gap: 5px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfc;
+        padding: 10px;
+      }
+
+      .tensor-card.accent {
+        border-color: #ddb3a6;
+        background: var(--soft-accent);
+      }
+
+      .tensor-card.teal {
+        border-color: #a7ccc7;
+        background: var(--soft-teal);
+      }
+
+      .tensor-card.green {
+        border-color: #bfd7b7;
+        background: var(--soft-green);
+      }
+
+      .tensor-card strong {
+        font-size: 0.9rem;
+      }
+
+      .tensor-card span,
+      .tensor-card p {
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.34;
+      }
+
+      .flow-arrow {
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        text-align: center;
+      }
+
+      .add-node {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        justify-self: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: #ffffff;
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      .fork {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .shape-list {
+        display: grid;
+        gap: 6px;
+      }
+
+      .shape-list div {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 7px 8px;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      .shape-list strong {
+        color: var(--ink);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.76rem;
+      }
+
+      .equation {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfc;
+        padding: 10px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.42;
+      }
+
+      .equation strong {
+        color: var(--ink);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .note {
+        border-left: 4px solid var(--accent);
+        background: #fff9f6;
+        padding: 10px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.42;
+      }
+
+      .mini-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .bar-track {
+        height: 11px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e2e9e8;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: var(--teal);
+      }
+
+      .value-meter {
+        display: grid;
+        gap: 8px;
+      }
+
+      .meter-track {
+        position: relative;
+        height: 18px;
+        border-radius: 999px;
+        background:
+          linear-gradient(90deg, var(--rose), #ece0d0 50%, var(--green));
+      }
+
+      .meter-pin {
+        position: absolute;
+        top: -5px;
+        left: 50%;
+        width: 4px;
+        height: 28px;
+        border-radius: 999px;
+        background: #172026;
+        transform: translateX(-2px);
+      }
+
+      .meter-labels {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 0.78rem;
+      }
+
+      @media (max-width: 1180px) {
+        .architecture {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .topbar,
+        .architecture {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .shell {
+          width: min(100vw - 20px, 1260px);
+          padding-top: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Stage 3 Model Architecture</h1>
+          <p>Each block gets its own small interactive view: input, conv stem, residual body, policy head, and value head.</p>
+        </div>
+        <p class="inline-code">docs/stage-3-architecture.html</p>
+      </header>
+
+      <section class="architecture" aria-label="Interactive architecture panels">
+        <article class="block">
+          <div class="block-header">
+            <h2>1. Encoder</h2>
+            <p>The 4x4-dot board becomes a 7x7 spatial grid. Dots, edges, and boxes keep their natural locations.</p>
+            <span class="shape">C x 7 x 7</span>
+          </div>
+          <div id="encoder-board" class="board" aria-label="7x7 encoded board"></div>
+          <div class="legend">
+            <span class="legend-item"><span class="swatch" style="background: #101820"></span>dot</span>
+            <span class="legend-item"><span class="swatch" style="background: var(--blue)"></span>P0 edge</span>
+            <span class="legend-item"><span class="swatch" style="background: var(--gold)"></span>P1 edge</span>
+            <span class="legend-item"><span class="swatch" style="background: var(--soft-blue)"></span>box</span>
+          </div>
+          <p class="note">The channels are stacked over this same 7x7 coordinate system: drawn edges, owners, boxes, score context, current player, and legal moves.</p>
+        </article>
+
+        <article class="block">
+          <div class="block-header">
+            <h2>2. Conv Stem</h2>
+            <p>A 3x3 kernel sweeps over all 7x7 output positions. One zero-padding border lets corner and edge positions exist.</p>
+            <span class="shape">padding 1, 3x3 conv -> 64 x 7 x 7</span>
+          </div>
+          <div id="conv-board" class="board padded-board" aria-label="Padded convolution kernel on board"></div>
+          <div class="control-stack">
+            <div class="slider-row">
+              <label for="kernel-slider"><span>Output coordinate</span><strong id="kernel-position">row 3, col 3</strong></label>
+              <input id="kernel-slider" type="range" min="0" max="48" value="24" />
+            </div>
+            <div class="readout">
+              <div class="readout-row"><span>Drawn edges</span><strong id="drawn-count">0</strong></div>
+              <div class="readout-row"><span>Legal edges</span><strong id="legal-count">0</strong></div>
+              <div class="readout-row"><span>Padding cells</span><strong id="pad-count">0</strong></div>
+              <div class="readout-row"><span>Patch reads as</span><strong id="feature-name">local tactic</strong></div>
+            </div>
+            <p class="note">Because padding supplies zeros outside the real board, the kernel center can visit row 0, col 0 through row 6, col 6 and still produce a 7x7 feature map.</p>
+          </div>
+        </article>
+
+        <article class="block">
+          <div class="block-header">
+            <h2>3. Residual Body</h2>
+            <p>Repeated residual blocks refine the shared feature maps while keeping the tensor shape fixed.</p>
+            <span class="shape">4-6 blocks, 64 x 7 x 7</span>
+          </div>
+          <div class="shape-flow" aria-label="Residual body shape diagram">
+            <div class="tensor-card">
+              <strong>Trunk features</strong>
+              <span class="shape">64 x 7 x 7</span>
+              <p>Feature maps from the convolutional stem.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card teal">
+              <strong>ResidualBlock 1</strong>
+              <span class="shape">64 x 7 x 7</span>
+              <p>Two padded 3x3 convolutions plus a skip connection.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card teal">
+              <strong>ResidualBlock 2</strong>
+              <span class="shape">64 x 7 x 7</span>
+              <p>Same operation, same shape, refined features.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card">
+              <strong>...</strong>
+              <span class="shape">repeat 4-6 total</span>
+              <p>Depth adds more feature refinement without resizing the board.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card accent">
+              <strong>Residual body output</strong>
+              <span class="shape">64 x 7 x 7</span>
+              <p>The policy and value heads both read this shared tensor.</p>
+            </div>
+          </div>
+          <p class="note">A residual block is still mostly convolution. The skip connection just adds the input back in, so the block can learn a correction while preserving useful features.</p>
+        </article>
+
+        <article class="block">
+          <div class="block-header">
+            <h2>4. Policy Head</h2>
+            <p>The policy branch converts spatial features into one score for each playable edge.</p>
+            <span class="shape">24 edge logits</span>
+          </div>
+          <div class="shape-flow" aria-label="Policy head shape diagram">
+            <div class="tensor-card">
+              <strong>Trunk output</strong>
+              <span class="shape">64 x 7 x 7</span>
+              <p>Every board coordinate has learned features.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card teal">
+              <strong>1x1 policy conv</strong>
+              <span class="shape">2 x 7 x 7</span>
+              <p>A cheap per-cell projection into policy feature maps.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card">
+              <strong>Flatten edge cells</strong>
+              <span class="shape">98 -> 24</span>
+              <p>Keep only horizontal and vertical edge coordinates.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card accent">
+              <strong>Mask + softmax</strong>
+              <span class="shape">24 probabilities</span>
+              <p>Already drawn edges get removed before probabilities are used.</p>
+            </div>
+          </div>
+          <div class="shape-list">
+            <div><span>Example top move</span><strong>h:2:0</strong></div>
+            <div><span>Policy target source</span><strong>MCTS visits</strong></div>
+            <div><span>Loss</span><strong>cross entropy</strong></div>
+          </div>
+          <p class="note">The policy head is still spatial until the edge-only flattening step. That is the bridge from board-shaped tensors to move ids like h:2:0.</p>
+        </article>
+
+        <article class="block">
+          <div class="block-header">
+            <h2>5. Value Head</h2>
+            <p>The value branch compresses all board features into one scalar for the current state.</p>
+            <span class="shape">scalar in [-1, 1]</span>
+          </div>
+          <div class="shape-flow" aria-label="Value head shape diagram">
+            <div class="tensor-card">
+              <strong>Trunk output</strong>
+              <span class="shape">64 x 7 x 7</span>
+              <p>The same shared features used by the policy head.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card green">
+              <strong>1x1 value conv</strong>
+              <span class="shape">1 x 7 x 7</span>
+              <p>Compress channels while keeping board positions.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card">
+              <strong>Flatten + MLP</strong>
+              <span class="shape">49 -> 64 -> 1</span>
+              <p>Collect evidence from the whole board.</p>
+            </div>
+            <div class="flow-arrow">|</div>
+            <div class="tensor-card accent">
+              <strong>tanh</strong>
+              <span class="shape">v in [-1, 1]</span>
+              <p>Predict final outcome from the player-to-move perspective.</p>
+            </div>
+          </div>
+          <div class="fork">
+            <div class="tensor-card">
+              <strong>Target</strong>
+              <span class="shape">score margin / boxes</span>
+            </div>
+            <div class="tensor-card">
+              <strong>Loss</strong>
+              <span class="shape">MSE or Huber</span>
+            </div>
+          </div>
+          <p class="note">Unlike the policy head, the value head intentionally destroys spatial shape near the end because it needs one board-level judgment.</p>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const edgeOwners = new Map([
+        ["h:0:0", 0],
+        ["h:1:0", 1],
+        ["h:1:1", 0],
+        ["h:2:1", 1],
+        ["h:3:0", 0],
+        ["v:0:0", 1],
+        ["v:0:1", 0],
+        ["v:1:1", 1],
+        ["v:1:2", 0],
+        ["v:2:0", 0],
+        ["v:2:1", 1],
+        ["v:2:3", 0],
+      ]);
+
+      const claimedBoxes = new Map([
+        ["1:0", 0],
+        ["2:0", 1],
+      ]);
+
+      const elements = {
+        encoderBoard: document.querySelector("#encoder-board"),
+        convBoard: document.querySelector("#conv-board"),
+        kernelSlider: document.querySelector("#kernel-slider"),
+        kernelPosition: document.querySelector("#kernel-position"),
+        drawnCount: document.querySelector("#drawn-count"),
+        legalCount: document.querySelector("#legal-count"),
+        padCount: document.querySelector("#pad-count"),
+        featureName: document.querySelector("#feature-name"),
+      };
+
+      function edgeIdForCell(row, col) {
+        if (row % 2 === 0 && col % 2 === 1) {
+          return `h:${row / 2}:${(col - 1) / 2}`;
+        }
+        if (row % 2 === 1 && col % 2 === 0) {
+          return `v:${(row - 1) / 2}:${col / 2}`;
+        }
+        return null;
+      }
+
+      function kernelCenter() {
+        const index = Number(elements.kernelSlider.value);
+        return {
+          row: Math.floor(index / 7),
+          col: index % 7,
+        };
+      }
+
+      function inKernel(row, col, center) {
+        return Math.abs(row - center.row) <= 1 && Math.abs(col - center.col) <= 1;
+      }
+
+      function init() {
+        renderAll();
+        elements.kernelSlider.addEventListener("input", renderAll);
+      }
+
+      function renderAll() {
+        renderBoard(elements.encoderBoard, {});
+        renderConv();
+      }
+
+      function renderConv() {
+        const center = kernelCenter();
+        let drawn = 0;
+        let legal = 0;
+        let padding = 0;
+        renderPaddedBoard(elements.convBoard, { kernelCenter: center });
+
+        for (let row = -1; row <= 7; row += 1) {
+          for (let col = -1; col <= 7; col += 1) {
+            if (!inKernel(row, col, center)) {
+              continue;
+            }
+            if (row < 0 || row > 6 || col < 0 || col > 6) {
+              padding += 1;
+              continue;
+            }
+            const edgeId = edgeIdForCell(row, col);
+            if (edgeId && edgeOwners.has(edgeId)) {
+              drawn += 1;
+            }
+            if (edgeId && !edgeOwners.has(edgeId)) {
+              legal += 1;
+            }
+          }
+        }
+
+        elements.kernelPosition.textContent = `row ${center.row}, col ${center.col}`;
+        elements.drawnCount.textContent = String(drawn);
+        elements.legalCount.textContent = String(legal);
+        elements.padCount.textContent = String(padding);
+        elements.featureName.textContent = convFeatureName(drawn, legal);
+      }
+
+      function renderBoard(container, options) {
+        container.innerHTML = "";
+        for (let row = 0; row < 7; row += 1) {
+          for (let col = 0; col < 7; col += 1) {
+            const cell = document.createElement("div");
+            cell.className = cellClass(row, col, options);
+            cell.title = cellTitle(row, col);
+            cell.textContent = cellText(row, col);
+            container.append(cell);
+          }
+        }
+      }
+
+      function renderPaddedBoard(container, options) {
+        container.innerHTML = "";
+        for (let displayRow = 0; displayRow < 9; displayRow += 1) {
+          for (let displayCol = 0; displayCol < 9; displayCol += 1) {
+            const row = displayRow - 1;
+            const col = displayCol - 1;
+            const cell = document.createElement("div");
+            cell.className = cellClass(row, col, options);
+            cell.title =
+              row < 0 || row > 6 || col < 0 || col > 6
+                ? "zero padding"
+                : cellTitle(row, col);
+            cell.textContent = row < 0 || row > 6 || col < 0 || col > 6 ? "" : cellText(row, col);
+            container.append(cell);
+          }
+        }
+      }
+
+      function cellClass(row, col, options) {
+        const classes = ["cell"];
+        if (row < 0 || row > 6 || col < 0 || col > 6) {
+          classes.push("pad");
+          if (options.kernelCenter && inKernel(row, col, options.kernelCenter)) {
+            classes.push("kernel");
+          }
+          return classes.join(" ");
+        }
+
+        const edgeId = edgeIdForCell(row, col);
+
+        if (row % 2 === 0 && col % 2 === 0) {
+          classes.push("dot");
+        } else if (edgeId) {
+          classes.push(edgeId.startsWith("h:") ? "edge-h" : "edge-v");
+          const owner = edgeOwners.get(edgeId);
+          if (owner === 0) {
+            classes.push("drawn-p0");
+          } else if (owner === 1) {
+            classes.push("drawn-p1");
+          } else {
+            classes.push("available", "policy-legal");
+          }
+        } else {
+          classes.push("box");
+          const owner = claimedBoxes.get(`${(row - 1) / 2}:${(col - 1) / 2}`);
+          if (owner === 0) {
+            classes.push("p0");
+          } else if (owner === 1) {
+            classes.push("p1");
+          }
+        }
+
+        if (options.kernelCenter && inKernel(row, col, options.kernelCenter)) {
+          classes.push("kernel");
+        }
+        if (options.kernelCenter && row === options.kernelCenter.row && col === options.kernelCenter.col) {
+          classes.push("center");
+        }
+        return classes.join(" ");
+      }
+
+      function cellText(row, col) {
+        if (row % 2 === 1 && col % 2 === 1) {
+          const owner = claimedBoxes.get(`${(row - 1) / 2}:${(col - 1) / 2}`);
+          if (owner !== undefined) {
+            return `P${owner}`;
+          }
+        }
+        return "";
+      }
+
+      function cellTitle(row, col) {
+        const edgeId = edgeIdForCell(row, col);
+        if (edgeId) {
+          const owner = edgeOwners.get(edgeId);
+          return owner === undefined ? `${edgeId} legal` : `${edgeId} drawn by player ${owner}`;
+        }
+        if (row % 2 === 0 && col % 2 === 0) {
+          return `dot ${row / 2},${col / 2}`;
+        }
+        return `box ${(row - 1) / 2},${(col - 1) / 2}`;
+      }
+
+      function convFeatureName(drawn, legal) {
+        if (drawn >= 4 && legal >= 1) {
+          return "crowded edge";
+        }
+        if (legal >= 4) {
+          return "open region";
+        }
+        if (drawn >= 2 && legal >= 2) {
+          return "mixed tactic";
+        }
+        return "local pattern";
+      }
+
+      init();
+    </script>
+  </body>
+</html>

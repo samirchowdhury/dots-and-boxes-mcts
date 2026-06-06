@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dots and Boxes Replay Viewer</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Replay Viewer</h1>
+          <p>Inspect one JSONL game line at a time.</p>
+        </div>
+        <form id="load-form" class="controls">
+          <label>
+            <span>File</span>
+            <select id="file-select" name="file"></select>
+          </label>
+          <label>
+            <span>Line</span>
+            <input id="line-input" name="line" type="number" min="1" value="1" />
+          </label>
+          <button type="submit">Load Game</button>
+        </form>
+      </header>
+
+      <section class="status-band" aria-live="polite">
+        <div>
+          <span class="label">Move</span>
+          <strong id="move-counter">0 / 0</strong>
+        </div>
+        <div>
+          <span class="label">Score</span>
+          <strong id="score">0 - 0</strong>
+        </div>
+        <div>
+          <span class="label">Turn</span>
+          <strong id="turn">Player 0</strong>
+        </div>
+        <div>
+          <span class="label">Last Move</span>
+          <strong id="last-move">Start</strong>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="board-panel">
+          <svg id="board" role="img" aria-label="Dots and Boxes board"></svg>
+        </div>
+        <aside class="side-panel">
+          <div class="transport">
+            <button id="first-button" type="button">First</button>
+            <button id="prev-button" type="button">Prev</button>
+            <input id="move-slider" type="range" min="0" max="0" value="0" />
+            <button id="next-button" type="button">Next</button>
+            <button id="last-button" type="button">Last</button>
+          </div>
+          <div class="game-summary" id="game-summary"></div>
+          <ol id="move-list" class="move-list"></ol>
+        </aside>
+      </section>
+
+      <p id="message" class="message"></p>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
+

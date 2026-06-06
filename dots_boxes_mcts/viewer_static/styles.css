@@ -1,0 +1,271 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7f8;
+  --ink: #192026;
+  --muted: #5f6f7a;
+  --panel: #ffffff;
+  --line: #d7e0e5;
+  --edge: #2f4858;
+  --accent: #c84b31;
+  --player-0: #1f77b4;
+  --player-1: #d08a1d;
+  --player-0-soft: #d7ebfa;
+  --player-1-soft: #f8e6c4;
+  --shadow: 0 18px 45px rgba(25, 32, 38, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  min-height: 2.5rem;
+  border: 1px solid #b7c4cb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.app-shell {
+  width: min(1180px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 24px 0 32px;
+}
+
+.topbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 18px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+p {
+  margin: 0;
+}
+
+.topbar p,
+.label,
+.message {
+  color: var(--muted);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 96px 120px;
+  align-items: end;
+  gap: 12px;
+  width: min(560px, 100%);
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+select,
+input[type="number"] {
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid #b7c4cb;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.status-band {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.status-band > div {
+  display: grid;
+  gap: 4px;
+  min-height: 74px;
+  background: var(--panel);
+  padding: 14px 16px;
+}
+
+.label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.status-band strong {
+  overflow-wrap: anywhere;
+  font-size: 1.05rem;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.board-panel,
+.side-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.board-panel {
+  display: grid;
+  min-height: 560px;
+  place-items: center;
+  padding: 24px;
+}
+
+#board {
+  width: min(100%, 720px);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  overflow: visible;
+}
+
+.side-panel {
+  display: grid;
+  gap: 16px;
+  max-height: 720px;
+  padding: 16px;
+}
+
+.transport {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+#move-slider {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.game-summary {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+
+.move-list {
+  display: grid;
+  gap: 6px;
+  min-height: 260px;
+  max-height: 430px;
+  margin: 0;
+  overflow: auto;
+  padding: 0 0 0 24px;
+}
+
+.move-list li {
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: var(--muted);
+}
+
+.move-list li.active {
+  background: #f3d8cf;
+  color: var(--ink);
+}
+
+.message {
+  min-height: 1.4rem;
+  padding-top: 12px;
+}
+
+.dot {
+  fill: #101820;
+}
+
+.available-edge {
+  stroke: #e1e8ec;
+  stroke-linecap: round;
+}
+
+.drawn-edge {
+  stroke-linecap: round;
+}
+
+.last-edge {
+  stroke: var(--accent);
+  stroke-linecap: round;
+}
+
+.box-label {
+  fill: var(--ink);
+  font-size: 18px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+@media (max-width: 880px) {
+  .topbar,
+  .workspace {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .controls,
+  .status-band {
+    grid-template-columns: 1fr;
+  }
+
+  .board-panel {
+    min-height: 360px;
+    padding: 14px;
+  }
+
+  .side-panel {
+    max-height: none;
+  }
+}
+

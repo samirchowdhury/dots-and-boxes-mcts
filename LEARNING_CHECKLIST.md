@@ -1,0 +1,654 @@
+# Dots and Boxes Learning Checklist
+
+Use this checklist when you come back to the repo and want to understand how the
+bot is improving without reading every line of code. The recurring pattern is:
+
+1. Run or inspect a small experiment.
+2. Look at the evidence: games, stats, visual replays, and failure cases.
+3. Read only the one or two files that explain the mechanism you are studying.
+
+## Setup
+
+- [ ] Enter the repo.
+
+```bash
+cd /Users/samirchowdhury/dots-and-boxes-mcts
+```
+
+- [ ] Activate the Python environment before running Python commands.
+
+```bash
+pyenv activate data
+```
+
+- [ ] Run the test suite before trusting experiment output.
+
+```bash
+python -m pytest -q
+```
+
+## Stage 1: Random Self-Play
+
+Goal: understand the game simulator. The question is: can we generate lots of
+valid Dots and Boxes games?
+
+- [ ] Generate a tiny batch of random games.
+
+```bash
+python -m dots_boxes_mcts.self_play \
+  --games 5 \
+  --rows 3 \
+  --cols 3 \
+  --seed 1 \
+  --out runs/random-3x3.jsonl
+```
+
+- [ ] Inspect the first JSONL record directly.
+
+```bash
+sed -n '1p' runs/random-3x3.jsonl
+```
+
+- [ ] Open the HTML replay tool and visually inspect a game.
+
+```bash
+python -m dots_boxes_mcts.viewer
+```
+
+Then open:
+
+```text
+http://localhost:8000
+```
+
+Use the file dropdown, enter line `1`, and press **Load Game**.
+
+- [ ] While replaying, check these mechanics:
+  - A player gets another turn after completing a box.
+  - Scores increase exactly when boxes are completed.
+  - The game ends after all edges are drawn.
+  - The final score equals the number of boxes: `(rows - 1) * (cols - 1)`.
+
+- [ ] Read the core rule implementation.
+
+```bash
+sed -n '1,240p' dots_boxes_mcts/game.py
+```
+
+- [ ] Read the random self-play driver.
+
+```bash
+sed -n '1,220p' dots_boxes_mcts/self_play.py
+```
+
+- [ ] Read the tests that protect the current behavior.
+
+```bash
+sed -n '1,240p' tests/test_game.py
+sed -n '1,220p' tests/test_self_play.py
+```
+
+## Stage 2: Plain UCT MCTS
+
+Goal: see improvement emerge from search, not from learning.
+
+- [ ] Ask Codex to implement the smallest MCTS player that can play against
+      random.
+- [ ] Run a few MCTS-vs-random batches.
+
+```bash
+python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 10 --seed 1 --out runs/mcts-10-vs-random-4x4.jsonl
+python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 50 --seed 1 --out runs/mcts-50-vs-random-4x4.jsonl
+python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 100 --seed 1 --out runs/mcts-100-vs-random-4x4.jsonl
+python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 500 --seed 1 --out runs/mcts-500-vs-random-4x4.jsonl
+```
+
+Each command prints win rate and average score margin. Look for the curve:
+does 500 simulations beat 100, does 100 beat 10, and where does runtime start
+feeling annoying?
+
+Important concept: `--simulations 10` does **not** mean "train an MCTS bot on
+10 self-play games." Plain UCT MCTS has no training, no saved weights, and no
+memory across games. It means "spend 10 temporary search simulations every time
+the MCTS player needs to choose one real move." The imagined simulations are
+discarded after the move is chosen.
+
+So this command:
+
+```bash
+python -m dots_boxes_mcts.evaluate \
+  --games 50 \
+  --rows 3 \
+  --cols 3 \
+  --simulations 10 \
+  --seed 1 \
+  --out runs/mcts-10-vs-random-3x3.jsonl
+```
+
+means: play 50 fresh games, and on each MCTS turn run 10 new imagined playouts
+from the current position before picking the next move.
+
+- [ ] Open the HTML viewer and replay a few MCTS games.
+
+```bash
+python -m dots_boxes_mcts.viewer
+```
+
+Then replay a few games from `runs/mcts-*.jsonl`. Look for:
+
+- Does MCTS take obvious boxes?
+- Does it avoid handing the random player easy boxes?
+- Do higher simulation counts choose visibly different moves?
+- Are there games where MCTS still makes a silly sacrifice?
+
+- [ ] Inspect the key MCTS files once they exist.
+
+```bash
+sed -n '1,260p' dots_boxes_mcts/mcts.py
+sed -n '1,260p' dots_boxes_mcts/evaluate.py
+```
+
+- [ ] Ask for a move-choice explanation from one position.
+
+```text
+Pick one MCTS game where search clearly changed the move choice. Show me the
+position, the selected move, visit counts, and why the move makes sense.
+```
+
+## Stage 2.5: Play The PAPG Bot
+
+Goal: compare search against a different hand-built bot, not just random.
+
+Important constraint: PAPG is a public website. Keep these batches small,
+single-threaded, and deliberately paced. Do not run tight request loops. The
+helper defaults to a 5-second delay between requests; only lower it if you have
+a good reason.
+
+- [ ] Run small live PAPG batches on the 4x4-dot board.
+
+Use the dedicated Python runner for real batches. It mirrors PAPG's browser
+flow, including the `Thinking...` poll step, waits between live requests, and
+writes replayable JSONL files.
+
+```bash
+python -m dots_boxes_mcts.papg_eval \
+  --games 10 \
+  --simulations 10 \
+  --seed 1 \
+  --request-delay 5 \
+  --out runs/papg/stage-2.5/mcts-10-vs-papg-4x4.jsonl
+
+python -m dots_boxes_mcts.papg_eval \
+  --games 10 \
+  --simulations 57 \
+  --seed 1001 \
+  --request-delay 5 \
+  --out runs/papg/stage-2.5/mcts-57-vs-papg-4x4.jsonl
+
+python -m dots_boxes_mcts.papg_eval \
+  --games 10 \
+  --simulations 100 \
+  --seed 2001 \
+  --request-delay 5 \
+  --out runs/papg/stage-2.5/mcts-100-vs-papg-4x4.jsonl
+```
+
+For 50-game batches, change `--games 10` to `--games 50`. Keep the runs
+single-threaded and leave `--request-delay 5` in place.
+
+The Codex Browser runner is still useful for a one-game visible-board smoke
+test when you specifically want Codex to verify the live page through the
+in-app browser. Do not paste this into your shell or Python prompt. It is
+JavaScript for Codex's browser automation environment; the easiest way to use
+it is to ask Codex something like:
+
+```text
+Use the Codex Browser plugin to run one PAPG smoke game with
+tools/papg_browser_runner.mjs.
+```
+
+Codex will open/connect the in-app browser, load this module, and run:
+
+```js
+const { runPapgBrowserBatch } = await import("./tools/papg_browser_runner.mjs");
+await runPapgBrowserBatch({
+  browser,
+  games: 1,
+  simulationsList: [10, 50, 100],
+  requestDelayMs: 5000,
+});
+```
+
+For normal experiments, prefer the Python `papg_eval` commands above; they run
+from a regular terminal and do not depend on the Codex Browser pane staying
+alive.
+
+Each command prints wins, draws, losses, win rate, and average score margin.
+Every live game is stored as replayable JSONL under `runs/papg/stage-2.5/`.
+
+- [ ] Replay the PAPG games in the local viewer.
+
+```bash
+python -m dots_boxes_mcts.viewer
+```
+
+Then choose one of the `papg/stage-2.5/*.jsonl` files and inspect where PAPG
+takes boxes, extends chains, or punishes a bad sacrifice.
+
+- [ ] Summarize whether search budget changed the odds.
+
+```text
+Compare the 10, 50, and 100 simulation PAPG batches. Give me a table of win
+rate, draws, losses, average score margin, and two replay line numbers worth
+watching.
+```
+
+## Stage 3: AlphaZero-Style Training
+
+Goal: understand the feedback loop: self-play creates data, the model learns
+from improved MCTS decisions, then the model guides future MCTS.
+
+- [x] Before training, read the one-page explanation of the pipeline:
+      `STAGE_3_ALPHAZERO_EXPLAINER.md`.
+
+- [ ] Inspect a few training examples.
+
+```text
+Generate a tiny self-play training dataset and show me three examples: board
+encoding, policy target, and value target.
+```
+
+## Stage 3.1: Tiny Overfit Scaffold
+
+Goal: verify that the MLX residual-conv learning plumbing is alive before generating a large
+self-play dataset. This is intentionally small and temporary: use existing
+MCTS-vs-random records to check that a small residual convolutional MLX network
+can memorize a handful of MCTS decision examples.
+
+- [ ] Generate a tiny debug batch.
+
+```bash
+python -m dots_boxes_mcts.evaluate \
+  --games 10 \
+  --rows 3 \
+  --cols 3 \
+  --simulations 25 \
+  --seed 1 \
+  --out runs/stage-3.1/debug-mcts-vs-random-10.jsonl
+```
+
+- [ ] Preview the examples.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.1/debug-mcts-vs-random-10.jsonl \
+  --limit 10 \
+  --preview \
+  --out runs/stage-3.1/debug-examples-10.jsonl
+```
+
+Check that:
+
+- `tensorShape` is `[8, 5, 5]` for a 3x3-dot board.
+- `legalMoves` equals the number of undrawn edges.
+- policy probabilities sum to `1.0`.
+- policy targets only include legal moves.
+- value targets are in `[-1, 1]` and use the decision player's perspective.
+
+- [ ] Run the tiny overfit test.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.1/debug-mcts-vs-random-10.jsonl \
+  --limit 20 \
+  --overfit-epochs 1000 \
+  --learning-rate 0.001 \
+  --hidden-size 64 \
+  --residual-blocks 2 \
+  --diagnostics-every 250 \
+  --mlx-device cpu \
+  --checkpoint-out runs/stage-3.1/tiny-overfit.npz
+```
+
+The pass signal is simple: `policyKl` should fall on the tiny batch, value loss
+should stay low or fall, and policy top-1 accuracy should rise. Raw policy loss
+will not go to zero because MCTS visit-count targets are soft distributions; the
+useful signal is the gap between policy loss and the target distribution's own
+entropy. If the tiny network cannot memorize 20 examples, do not move on to
+10,000 self-play games yet.
+
+The target distribution's entropy comes directly from the MCTS visit-count
+policy target. If search visits produce a policy like:
+
+```text
+{"h:0:0": 0.7, "v:0:0": 0.2, "h:1:0": 0.1}
+```
+
+then its entropy is:
+
+```text
+H(target) = -sum(p * log(p))
+```
+
+The policy loss is cross-entropy:
+
+```text
+CE(target, prediction) = -sum(target * log(prediction))
+```
+
+If the model predicts the target distribution perfectly, then
+`CE(target, target) == H(target)`. So a soft target cannot drive raw policy loss
+to zero. The useful remaining error is:
+
+```text
+policyKl = policyLoss - policyTargetEntropy
+```
+
+That is the distance between the model's predicted move distribution and the
+MCTS visit-count target distribution.
+
+Use `--mlx-device gpu` from a normal Apple Silicon terminal when you want MLX to
+use Metal. The CPU setting is enough for this tiny smoke test.
+
+- [ ] Read the overfit scaffold.
+
+```bash
+sed -n '1,320p' dots_boxes_mcts/train.py
+```
+
+Look for:
+
+- how snapshots become tensors,
+- how MCTS visit counts become policy vectors,
+- how final score margin becomes the value target,
+- how the diagnostics prove the model can fit the toy batch.
+
+## Stage 3.2: 4x4 MCTS Self-Play Data Ramp
+
+Goal: replace the temporary MCTS-vs-random debug source with true MCTS-vs-MCTS
+self-play. Both players use the same plain UCT searcher, and every real move
+records a decision with root state, selected move, visit-count policy target,
+and final value target. Use 4x4-dot boards here so the first real training
+checkpoint sees a slightly richer board than the 3x3-dot smoke tests.
+
+- [ ] Run a 10-game smoke test.
+
+```bash
+python -m dots_boxes_mcts.az_self_play \
+  --games 10 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 25 \
+  --seed 1 \
+  --out runs/stage-3.2/self-play-4x4-10.jsonl
+```
+
+Check the printed summary. On a 4x4-dot board, `averageDecisionsPerGame` should
+be `24.0`, because there are 24 edges and both MCTS players record every move.
+
+- [ ] Convert the smoke batch into examples and preview a few.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.2/self-play-4x4-10.jsonl \
+  --limit 10 \
+  --preview \
+  --out runs/stage-3.2/examples-4x4-10-preview.jsonl
+```
+
+Check that examples include both `player: 0` and `player: 1`.
+
+- [ ] Ramp to 100 games.
+
+```bash
+python -m dots_boxes_mcts.az_self_play \
+  --games 100 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 25 \
+  --seed 1001 \
+  --out runs/stage-3.2/self-play-4x4-100.jsonl
+
+python -m dots_boxes_mcts.train \
+  runs/stage-3.2/self-play-4x4-100.jsonl \
+  --out runs/stage-3.2/examples-4x4-100.jsonl
+```
+
+Expected example count for 4x4 dots is `games * 24`, so 100 games should produce
+2,400 training examples.
+
+- [ ] Ramp to 1,000 games.
+
+```bash
+python -m dots_boxes_mcts.az_self_play \
+  --games 1000 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 25 \
+  --seed 2001 \
+  --out runs/stage-3.2/self-play-4x4-1000.jsonl
+
+python -m dots_boxes_mcts.train \
+  runs/stage-3.2/self-play-4x4-1000.jsonl \
+  --out runs/stage-3.2/examples-4x4-1000.jsonl
+```
+
+Expected example count is 24,000. Inspect file size and runtime before moving
+to 10,000 games or larger boards.
+
+## Stage 3.3: Train The First Real MLX Checkpoint
+
+Goal: train on the Stage 3.2 examples with a train/validation split and save a
+checkpoint. This still learns from plain MCTS targets; it is not yet used to
+play moves.
+
+- [ ] Train the first checkpoint.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.2/examples-4x4-1000.jsonl \
+  --train-epochs 20 \
+  --batch-size 256 \
+  --learning-rate 0.001 \
+  --hidden-size 64 \
+  --residual-blocks 4 \
+  --validation-fraction 0.1 \
+  --diagnostics-every 5 \
+  --mlx-device gpu \
+  --diagnostics-out runs/stage-3.3/mlx-resconv-policy-value-4x4-1000-diagnostics.jsonl \
+  --checkpoint-out runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+```
+
+Watch both `train` and `validation` diagnostics. A useful first checkpoint
+should lower `policyKl` over epochs without validation getting dramatically
+worse. The value head may be noisier because 4x4 self-play outcomes are still
+generated by plain MCTS, not by a mature learned player.
+
+- [ ] Save the diagnostics in your notes.
+
+Look for:
+
+- final train vs validation `policyKl`,
+- final train vs validation `valueMae`,
+- whether top-1 policy accuracy improves,
+- whether the checkpoint file was written.
+
+## Stage 3.4: Network-Guided MCTS
+
+Goal: use the residual-conv checkpoint inside search. This is the first stage
+where the network affects move choice. PUCT uses the policy head as priors and
+the value head instead of random rollouts.
+
+- [ ] Run one guided-search smoke test.
+
+```bash
+python -m dots_boxes_mcts.az_mcts \
+  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --rows 4 \
+  --cols 4 \
+  --simulations 25 \
+  --mlx-device gpu
+```
+
+Check that the selected move is legal and that the root stats have visit counts.
+
+## Stage 3.5: Guided Search Evaluation
+
+Goal: compare network-guided MCTS against baselines before trusting it to make
+new training data.
+
+- [ ] Evaluate against random.
+
+```bash
+python -m dots_boxes_mcts.az_evaluate \
+  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --opponent random \
+  --games 50 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 25 \
+  --seed 3001 \
+  --mlx-device gpu \
+  --out runs/stage-3.5/guided-vs-random-4x4-50.jsonl
+```
+
+- [ ] Evaluate against plain MCTS at the same simulation count.
+
+```bash
+python -m dots_boxes_mcts.az_evaluate \
+  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --opponent plain_mcts \
+  --games 50 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 25 \
+  --opponent-simulations 25 \
+  --seed 4001 \
+  --mlx-device gpu \
+  --out runs/stage-3.5/guided-vs-plain-mcts-25-4x4-50.jsonl
+```
+
+The useful signal is not just win rate. Inspect average score margin and replay
+a few losses. If guided MCTS loses badly to plain MCTS, improve the checkpoint
+before starting the flywheel.
+
+## Stage 3.6: First Flywheel Iteration
+
+Goal: create stronger examples with network-guided MCTS, train the next
+checkpoint, and keep both checkpoints for comparison.
+
+- [ ] Generate guided self-play.
+
+```bash
+python -m dots_boxes_mcts.az_guided_self_play \
+  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --iteration 1 \
+  --games 100 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 250 \
+  --seed 6001 \
+  --root-dirichlet-alpha 0.3 \
+  --root-exploration-fraction 0.25 \
+  --mlx-device gpu \
+  --debug
+```
+
+The preceding step infers these output paths and refuses to overwrite them unless you pass
+`--overwrite`:
+
+```text
+runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims250.jsonl
+runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims250.meta.json
+```
+
+- [ ] Convert guided games into examples.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims250.jsonl \
+  --out runs/stage-3.6/guided-examples-4x4-iter001-games100-sims250.jsonl
+```
+
+- [ ] Train the next checkpoint.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.6/guided-examples-4x4-iter001-games100-sims250.jsonl \
+  --train-epochs 20 \
+  --batch-size 256 \
+  --learning-rate 0.001 \
+  --hidden-size 64 \
+  --residual-blocks 4 \
+  --validation-fraction 0.1 \
+  --diagnostics-every 5 \
+  --mlx-device gpu \
+  --diagnostics-out runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250-diagnostics.jsonl \
+  --checkpoint-out runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz
+```
+
+- [ ] Evaluate the new checkpoint against the previous checkpoint.
+
+```bash
+python -m dots_boxes_mcts.az_checkpoint_eval \
+  --candidate runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz \
+  --baseline runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --games 20 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 100 \
+  --seed 7001 \
+  --mlx-device gpu \
+  --out runs/stage-3.6/iter001-vs-stage-3.3-sims100.jsonl
+```
+
+The evaluator alternates which checkpoint plays first. Read the printed summary
+from the candidate checkpoint's perspective, then replay a few wins and losses
+before deciding whether to promote it.
+
+Do not promote the new checkpoint just because loss went down. Evaluate it
+against the previous checkpoint and the plain-MCTS baseline first.
+
+- [ ] Read the anchor files once they exist.
+
+```bash
+sed -n '1,260p' dots_boxes_mcts/az_self_play.py
+sed -n '1,260p' dots_boxes_mcts/az_mcts.py
+sed -n '1,260p' dots_boxes_mcts/az_evaluate.py
+sed -n '1,260p' dots_boxes_mcts/az_checkpoint_eval.py
+sed -n '1,260p' dots_boxes_mcts/az_guided_self_play.py
+sed -n '1,260p' dots_boxes_mcts/encoding.py
+sed -n '1,260p' dots_boxes_mcts/network.py
+sed -n '1,260p' dots_boxes_mcts/train.py
+sed -n '1,260p' dots_boxes_mcts/az_mcts.py
+```
+
+- [ ] Ask for training diagnostics.
+
+```text
+Show me loss curves, old-model-vs-new-model match results, and three positions
+where the learned policy changed over training.
+```
+
+- [ ] Replay self-play games from early and later checkpoints in the HTML
+      viewer, looking for strategy changes rather than just final scores.
+
+## Human Inspection Rhythm
+
+- [ ] After each feature, inspect the command, output file, and one relevant
+      function.
+- [ ] After each experiment, inspect the table/plot and two or three concrete
+      games in the HTML viewer.
+- [ ] After each jump in strength, ask:
+  - What changed mechanically?
+  - What evidence says it improved?
+  - What failure cases remain?
+- [ ] Before moving from MCTS to AlphaZero-style training, make sure you can
+      explain these ideas in your own words:
+  - random self-play,
+  - legal moves and state transitions,
+  - extra turns after scoring,
+  - UCT selection,
+  - rollouts or value estimates,
+  - win-rate evaluation,
+  - policy targets and value targets.

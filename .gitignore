@@ -2,4 +2,12 @@
 .pytest_cache/
 __pycache__/
 *.pyc
-runs/
+runs/*
+!runs/.gitkeep
+!runs/papg/
+runs/papg/*
+!runs/papg/.gitkeep
+!runs/papg/stage-*/
+runs/papg/stage-*/*
+!runs/papg/stage-*/.gitkeep
+research/
