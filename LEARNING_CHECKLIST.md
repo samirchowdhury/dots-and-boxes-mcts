@@ -535,7 +535,7 @@ before starting the flywheel.
 ## Stage 3.6: First Flywheel Iteration
 
 Goal: create stronger examples with network-guided MCTS, train the next
-checkpoint, and keep both checkpoints for comparison.
+checkpoint, and inspect whether the loop is producing useful diversity.
 
 - [ ] Generate guided self-play.
 
@@ -543,43 +543,50 @@ checkpoint, and keep both checkpoints for comparison.
 python -m dots_boxes_mcts.az_guided_self_play \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --iteration 1 \
-  --games 100 \
+  --games 200 \
   --rows 4 \
   --cols 4 \
   --simulations 250 \
   --seed 6001 \
   --root-dirichlet-alpha 0.3 \
   --root-exploration-fraction 0.25 \
+  --temperature-moves 8 \
+  --sampling-temperature 1.0 \
   --mlx-device gpu \
   --debug
 ```
+
+Guided self-play samples from MCTS visit counts for the first 8 moves, then
+switches back to the max-visit move. The root Dirichlet noise makes search
+visits vary between games; visit-count sampling turns that variation into
+different played openings, which keeps the training set from collapsing onto
+one deterministic opening trunk.
 
 The preceding step infers these output paths and refuses to overwrite them unless you pass
 `--overwrite`:
 
 ```text
-runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims250.jsonl
-runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims250.meta.json
+runs/stage-3.6/guided-self-play-4x4-iter001-games200-sims250.jsonl
+runs/stage-3.6/guided-self-play-4x4-iter001-games200-sims250.meta.json
 ```
 
 - [ ] Convert guided games into examples.
 
 ```bash
 python -m dots_boxes_mcts.train \
-  runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims250.jsonl \
-  --out runs/stage-3.6/guided-examples-4x4-iter001-games100-sims250.jsonl
+  runs/stage-3.6/guided-self-play-4x4-iter001-games200-sims250.jsonl \
+  --out runs/stage-3.6/guided-examples-4x4-iter001-games200-sims250.jsonl
 ```
 
-- [ ] Train the next checkpoint.
+- [ ] Train the next checkpoint from the current champion on this batch only.
 
 ```bash
 python -m dots_boxes_mcts.train \
-  runs/stage-3.6/guided-examples-4x4-iter001-games100-sims250.jsonl \
-  --train-epochs 20 \
+  runs/stage-3.6/guided-examples-4x4-iter001-games200-sims250.jsonl \
+  --init-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --train-epochs 10 \
   --batch-size 256 \
-  --learning-rate 0.001 \
-  --hidden-size 64 \
-  --residual-blocks 4 \
+  --learning-rate 0.0005 \
   --validation-fraction 0.1 \
   --diagnostics-every 5 \
   --mlx-device gpu \
@@ -587,27 +594,218 @@ python -m dots_boxes_mcts.train \
   --checkpoint-out runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz
 ```
 
-- [ ] Evaluate the new checkpoint against the previous checkpoint.
+- [ ] Evaluate the new checkpoint against the current champion.
 
 ```bash
 python -m dots_boxes_mcts.az_checkpoint_eval \
   --candidate runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz \
   --baseline runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --games 20 \
+  --games 100 \
   --rows 4 \
   --cols 4 \
   --simulations 100 \
   --seed 7001 \
   --mlx-device gpu \
-  --out runs/stage-3.6/iter001-vs-stage-3.3-sims100.jsonl
+  --out runs/stage-3.6/iter001-vs-champion-sims100.jsonl
 ```
 
 The evaluator alternates which checkpoint plays first. Read the printed summary
 from the candidate checkpoint's perspective, then replay a few wins and losses
-before deciding whether to promote it.
+to understand what changed. Each game starts with two seeded random opening
+moves by default so the match samples multiple positions instead of replaying
+the same deterministic game for each player color. For a pure deterministic
+mirror match, pass `--opening-random-plies 0`.
 
-Do not promote the new checkpoint just because loss went down. Evaluate it
-against the previous checkpoint and the plain-MCTS baseline first.
+The first flywheel checkpoint does not need to beat Stage 3.3 immediately. A
+reasonable Stage 3.6 outcome is: self-play games show diverse openings, the
+candidate is not catastrophically worse, and the replay viewer reveals concrete
+failure cases to improve. If the candidate does not clear the promotion bar,
+leave Stage 3.3 as the champion and generate the next candidate from Stage 3.3
+again.
+
+- [ ] Or run the same first iteration through the champion-gated pipeline runner.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel \
+  --iteration 1 \
+  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+```
+
+Use `--overwrite` only when you intentionally want to replace the existing
+Stage 3.6 iteration 1 outputs.
+
+## Stage 3.7: Continue The Flywheel
+
+Goal: generate new self-play from the current champion, continue optimizing the
+latest training checkpoint, and evaluate whether the new challenger deserves
+promotion.
+
+The safest way to run a candidate iteration is the pipeline runner. It derives
+the self-play, example, checkpoint, diagnostics, and evaluation filenames from
+the iteration number; picks non-overlapping default seeds; uses the current
+champion for self-play; trains on this iteration's examples only; continues
+optimization from the latest candidate checkpoint; and evaluates the new
+candidate against the champion.
+
+This is intentionally champion-gated for data generation and evaluation. Do not
+use an unpromoted previous candidate to generate the next self-play batch, but
+do continue training from the latest candidate checkpoint unless you explicitly
+want to restart optimization from the champion.
+
+- [ ] Dry-run the next iteration.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel \
+  --iteration 2 \
+  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --dry-run
+```
+
+- [ ] Run the next iteration.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel \
+  --iteration 2 \
+  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+```
+
+For iteration 2, the runner defaults to:
+
+```text
+champion checkpoint: runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+training init checkpoint: runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz
+self-play seed: 8001
+eval seed: 9001
+games: 200
+self-play simulations: 250
+evaluation simulations: 100
+```
+
+Use `--champion-checkpoint` to point at the currently promoted champion. The
+training init checkpoint defaults to the previous iteration candidate; pass
+`--init-checkpoint` only when that file has a nonstandard name or when you want
+to intentionally restart from a different checkpoint. Use `--overwrite` only
+when you intentionally want to replace an existing iteration output.
+
+The manual form below shows the same iteration 2 pattern expanded.
+
+- [ ] Generate the next batch of guided self-play from the current champion.
+
+```bash
+python -m dots_boxes_mcts.az_guided_self_play \
+  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --iteration 2 \
+  --games 200 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 250 \
+  --seed 8001 \
+  --root-dirichlet-alpha 0.3 \
+  --root-exploration-fraction 0.25 \
+  --temperature-moves 8 \
+  --sampling-temperature 1.0 \
+  --mlx-device gpu \
+  --debug
+```
+
+- [ ] Convert the new games into examples.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.6/guided-self-play-4x4-iter002-games200-sims250.jsonl \
+  --out runs/stage-3.6/guided-examples-4x4-iter002-games200-sims250.jsonl
+```
+
+- [ ] Continue training the latest candidate on this batch only.
+
+```bash
+python -m dots_boxes_mcts.train \
+  runs/stage-3.6/guided-examples-4x4-iter002-games200-sims250.jsonl \
+  --init-checkpoint runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz \
+  --train-epochs 10 \
+  --batch-size 256 \
+  --learning-rate 0.0005 \
+  --validation-fraction 0.1 \
+  --diagnostics-every 5 \
+  --mlx-device gpu \
+  --diagnostics-out runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250-diagnostics.jsonl \
+  --checkpoint-out runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz
+```
+
+`--init-checkpoint` loads the latest training checkpoint and trains with a fresh
+optimizer. This can be different from the champion: the champion controls
+self-play and the evaluation baseline, while the init checkpoint controls where
+optimization continues. The architecture comes from the checkpoint, so keep the
+example shape the same: same board size, encoder, and action space.
+
+- [ ] Evaluate the challenger against the current champion.
+
+```bash
+python -m dots_boxes_mcts.az_checkpoint_eval \
+  --candidate runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz \
+  --baseline runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
+  --games 100 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 100 \
+  --seed 9001 \
+  --mlx-device gpu \
+  --out runs/stage-3.6/iter002-vs-champion-sims100.jsonl
+```
+
+Continue this loop by bumping the iteration number while keeping the same
+champion checkpoint until a candidate clears the promotion bar. The next
+iteration continues training from the previous candidate by default even if that
+previous candidate was not promoted. Use the replay viewer after each iteration;
+a better checkpoint should win more often, lose by smaller margins, and avoid
+obvious repeated mistakes.
+
+## Stage 3.8: Promote A Checkpoint
+
+Goal: make one checkpoint the current champion only after it beats the previous
+champion by match results and by game inspection.
+
+Promotion means the checkpoint becomes the default parent for future guided
+self-play, the baseline that future candidates must beat, and the checkpoint
+you reference in notes as the current champion. Promotion is a project decision,
+not a training command.
+
+- [ ] Use a promotion bar before changing the champion.
+
+Suggested first bar:
+
+- at least 100 evaluation games against the current champion,
+- win rate at or above 55%,
+- average score margin at or above 0.0,
+- replayed wins and losses do not show a new obvious failure mode,
+- performance against plain MCTS has not regressed badly.
+
+- [ ] Record the promotion in your notes.
+
+```text
+Champion: runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz
+Promoted over: runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+Evidence: 100-game checkpoint match, score margin, plain-MCTS eval, replay notes.
+```
+
+- [ ] Use the promoted checkpoint as the parent for the next self-play batch.
+
+```bash
+python -m dots_boxes_mcts.az_guided_self_play \
+  --checkpoint runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz \
+  --iteration 3 \
+  --games 200 \
+  --rows 4 \
+  --cols 4 \
+  --simulations 250 \
+  --seed 10001 \
+  --root-dirichlet-alpha 0.3 \
+  --root-exploration-fraction 0.25 \
+  --temperature-moves 8 \
+  --sampling-temperature 1.0 \
+  --mlx-device gpu \
+  --debug
+```
 
 - [ ] Read the anchor files once they exist.
 
