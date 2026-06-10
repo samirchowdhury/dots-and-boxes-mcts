@@ -36,3 +36,5 @@ def test_generate_and_summarize_mcts_records() -> None:
     assert [record["gameIndex"] for record in records] == [0, 1, 2]
     assert summary["games"] == 3
     assert summary["wins"] + summary["draws"] + summary["losses"] == 3
+    assert "strategic" in summary
+    assert "unsafeOpenerRate" in summary["strategic"]

@@ -8,6 +8,7 @@ from pathlib import Path
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
 from dots_boxes_mcts.self_play import write_jsonl
+from dots_boxes_mcts.strategic_eval import summarize_strategic_records
 
 
 def play_mcts_vs_random_game(
@@ -94,6 +95,7 @@ def summarize_records(records: list[dict], mcts_player: int = 0) -> dict:
             "losses": 0,
             "winRate": 0.0,
             "averageScoreMargin": 0.0,
+            "strategic": summarize_strategic_records([], perspective_player=mcts_player),
         }
 
     opponent = 1 if mcts_player == 0 else 0
@@ -111,6 +113,7 @@ def summarize_records(records: list[dict], mcts_player: int = 0) -> dict:
         "losses": losses,
         "winRate": wins / len(records),
         "averageScoreMargin": sum(margins) / len(margins),
+        "strategic": summarize_strategic_records(records, perspective_player=mcts_player),
     }
 
 

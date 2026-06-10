@@ -623,16 +623,21 @@ failure cases to improve. If the candidate does not clear the promotion bar,
 leave Stage 3.3 as the champion and generate the next candidate from Stage 3.3
 again.
 
-- [ ] Or run the same first iteration through the champion-gated pipeline runner.
+- [ ] Or run the same first iteration through the tracked pipeline runner.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel \
-  --iteration 1 \
+python -m dots_boxes_mcts.az_flywheel init-state \
   --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+python -m dots_boxes_mcts.az_flywheel next --dry-run
+python -m dots_boxes_mcts.az_flywheel next
 ```
 
-Use `--overwrite` only when you intentionally want to replace the existing
-Stage 3.6 iteration 1 outputs.
+This is the preferred path once you are ready to use the flywheel regularly.
+It writes the ledger to `runs/az-flywheel/`, keeps iteration artifacts in
+`runs/stage-3.6/`, and records the candidate evaluation as pending after the
+run completes. Use `init-state --overwrite` only when you intentionally want to
+reset the ledger state; use `next --overwrite` only when you intentionally want
+to replace existing Stage 3.6 iteration outputs.
 
 ## Stage 3.7: Continue The Flywheel
 
@@ -640,19 +645,110 @@ Goal: generate new self-play from the current champion, continue optimizing the
 latest training checkpoint, and evaluate whether the new challenger deserves
 promotion.
 
-The safest way to run a candidate iteration is the pipeline runner. It derives
-the self-play, example, checkpoint, diagnostics, and evaluation filenames from
-the iteration number; picks non-overlapping default seeds; uses the current
-champion for self-play; trains on this iteration's examples only; continues
-optimization from the latest candidate checkpoint; and evaluates the new
-candidate against the champion.
+The tracked pipeline runner keeps a tiny local ledger in
+`runs/az-flywheel/flywheel-state.json` and an append-only history in
+`runs/az-flywheel/flywheel-history.jsonl`. Here `az` means
+AlphaZero-style: self-play guided by a policy/value network, training from that
+self-play, and champion-gated checkpoint evaluation. The ledger is stage-neutral
+because it tracks the flywheel process across Stage 3.6, Stage 3.7, and future
+iterations; the generated games, examples, checkpoints, and evaluations still
+default to `runs/stage-3.6/`.
 
-This is intentionally champion-gated for data generation and evaluation. Do not
-use an unpromoted previous candidate to generate the next self-play batch, but
-do continue training from the latest candidate checkpoint unless you explicitly
-want to restart optimization from the champion.
+The state records the next iteration, the current champion checkpoint, the
+latest candidate checkpoint, and the last evaluation summary. Use this mode for
+normal work so you do not have to remember which iteration, champion, or
+promotion decision is current.
 
-- [ ] Dry-run the next iteration.
+- [ ] Initialize the tracked flywheel state.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel init-state \
+  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+```
+
+Use `--overwrite` only when you intentionally want to reset the tracked state.
+This does not delete checkpoints or replay files; it only rewrites the ledger
+state file.
+
+- [ ] Check what the runner thinks is current.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel status
+```
+
+- [ ] Dry-run the next tracked iteration.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel next --dry-run
+```
+
+- [ ] Run the next tracked iteration.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel next
+```
+
+After `next` finishes, the runner reads the checkpoint-match replay file,
+records the candidate evaluation summary, advances `nextIteration`, and leaves
+the promotion decision as `pending`.
+
+- [ ] Promote a candidate that clears the bar.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel promote \
+  --iteration 1 \
+  --reason "cleared promotion bar in checkpoint match"
+```
+
+Suggested first promotion bar:
+
+- at least 100 evaluation games against the current champion,
+- win rate at or above 55%,
+- average score margin at or above 0.0,
+- replayed wins and losses do not show a new obvious failure mode,
+- performance against plain MCTS has not regressed badly.
+
+- [ ] Or reject a candidate and keep the current champion.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel reject \
+  --iteration 1 \
+  --reason "evaluation exposed repeated opening mistakes"
+```
+
+`reject` is a bookkeeping command, not a destructive command. It reads that
+iteration's evaluation file, writes a `rejected` decision and summary into the
+ledger, leaves `championCheckpoint` unchanged, and keeps `nextIteration`
+advanced. The candidate checkpoint and replay files stay on disk. The next
+`python -m dots_boxes_mcts.az_flywheel next` will still use the current champion
+for self-play and evaluation, while training defaults to the previous iteration
+candidate unless you override `--init-checkpoint`.
+
+The loop is intentionally champion-gated for data generation and evaluation: the
+current champion controls self-play and the evaluation baseline. Training still
+defaults to the previous iteration candidate after iteration 1, even if that
+candidate was not promoted. Pass `--init-checkpoint` to `next` only when a
+checkpoint has a nonstandard name or when you intentionally want to restart
+optimization from a different checkpoint.
+
+- [ ] Or let the flywheel run several iterations with a fixed promotion policy.
+
+```bash
+python -m dots_boxes_mcts.az_flywheel loop \
+  --iterations 5 \
+  --min-win-rate 0.55 \
+  --min-average-score-margin 0.0
+```
+
+`loop` repeatedly runs the tracked `next` pipeline, records the checkpoint-match
+summary, and then automatically promotes or rejects the candidate. A candidate
+is promoted only if both thresholds pass. If it is rejected, the champion stays
+unchanged for the next self-play and evaluation baseline, but training still
+continues from that rejected candidate by default. This preserves the current
+flywheel behavior: champion-gated data generation and evaluation, continuous
+optimization from the latest candidate.
+
+The old explicit form still works for one-off runs:
 
 ```bash
 python -m dots_boxes_mcts.az_flywheel \
@@ -661,151 +757,10 @@ python -m dots_boxes_mcts.az_flywheel \
   --dry-run
 ```
 
-- [ ] Run the next iteration.
-
-```bash
-python -m dots_boxes_mcts.az_flywheel \
-  --iteration 2 \
-  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
-```
-
-For iteration 2, the runner defaults to:
-
-```text
-champion checkpoint: runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
-training init checkpoint: runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz
-self-play seed: 8001
-eval seed: 9001
-games: 200
-self-play simulations: 250
-evaluation simulations: 100
-```
-
-Use `--champion-checkpoint` to point at the currently promoted champion. The
-training init checkpoint defaults to the previous iteration candidate; pass
-`--init-checkpoint` only when that file has a nonstandard name or when you want
-to intentionally restart from a different checkpoint. Use `--overwrite` only
-when you intentionally want to replace an existing iteration output.
-
-The manual form below shows the same iteration 2 pattern expanded.
-
-- [ ] Generate the next batch of guided self-play from the current champion.
-
-```bash
-python -m dots_boxes_mcts.az_guided_self_play \
-  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --iteration 2 \
-  --games 200 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 250 \
-  --seed 8001 \
-  --root-dirichlet-alpha 0.3 \
-  --root-exploration-fraction 0.25 \
-  --temperature-moves 8 \
-  --sampling-temperature 1.0 \
-  --mlx-device gpu \
-  --debug
-```
-
-- [ ] Convert the new games into examples.
-
-```bash
-python -m dots_boxes_mcts.train \
-  runs/stage-3.6/guided-self-play-4x4-iter002-games200-sims250.jsonl \
-  --out runs/stage-3.6/guided-examples-4x4-iter002-games200-sims250.jsonl
-```
-
-- [ ] Continue training the latest candidate on this batch only.
-
-```bash
-python -m dots_boxes_mcts.train \
-  runs/stage-3.6/guided-examples-4x4-iter002-games200-sims250.jsonl \
-  --init-checkpoint runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz \
-  --train-epochs 10 \
-  --batch-size 256 \
-  --learning-rate 0.0005 \
-  --validation-fraction 0.1 \
-  --diagnostics-every 5 \
-  --mlx-device gpu \
-  --diagnostics-out runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250-diagnostics.jsonl \
-  --checkpoint-out runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz
-```
-
-`--init-checkpoint` loads the latest training checkpoint and trains with a fresh
-optimizer. This can be different from the champion: the champion controls
-self-play and the evaluation baseline, while the init checkpoint controls where
-optimization continues. The architecture comes from the checkpoint, so keep the
-example shape the same: same board size, encoder, and action space.
-
-- [ ] Evaluate the challenger against the current champion.
-
-```bash
-python -m dots_boxes_mcts.az_checkpoint_eval \
-  --candidate runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz \
-  --baseline runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --games 100 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 100 \
-  --seed 9001 \
-  --mlx-device gpu \
-  --out runs/stage-3.6/iter002-vs-champion-sims100.jsonl
-```
-
-Continue this loop by bumping the iteration number while keeping the same
-champion checkpoint until a candidate clears the promotion bar. The next
-iteration continues training from the previous candidate by default even if that
-previous candidate was not promoted. Use the replay viewer after each iteration;
-a better checkpoint should win more often, lose by smaller margins, and avoid
-obvious repeated mistakes.
-
-## Stage 3.8: Promote A Checkpoint
-
-Goal: make one checkpoint the current champion only after it beats the previous
-champion by match results and by game inspection.
-
-Promotion means the checkpoint becomes the default parent for future guided
-self-play, the baseline that future candidates must beat, and the checkpoint
-you reference in notes as the current champion. Promotion is a project decision,
-not a training command.
-
-- [ ] Use a promotion bar before changing the champion.
-
-Suggested first bar:
-
-- at least 100 evaluation games against the current champion,
-- win rate at or above 55%,
-- average score margin at or above 0.0,
-- replayed wins and losses do not show a new obvious failure mode,
-- performance against plain MCTS has not regressed badly.
-
-- [ ] Record the promotion in your notes.
-
-```text
-Champion: runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz
-Promoted over: runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
-Evidence: 100-game checkpoint match, score margin, plain-MCTS eval, replay notes.
-```
-
-- [ ] Use the promoted checkpoint as the parent for the next self-play batch.
-
-```bash
-python -m dots_boxes_mcts.az_guided_self_play \
-  --checkpoint runs/stage-3.6/mlx-resconv-policy-value-4x4-iter002-guided-sims250.npz \
-  --iteration 3 \
-  --games 200 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 250 \
-  --seed 10001 \
-  --root-dirichlet-alpha 0.3 \
-  --root-exploration-fraction 0.25 \
-  --temperature-moves 8 \
-  --sampling-temperature 1.0 \
-  --mlx-device gpu \
-  --debug
-```
+Prefer the tracked `next`/`status`/`promote`/`reject` workflow for real
+experiments. Use the replay viewer after each iteration; a better checkpoint
+should win more often, lose by smaller margins, and avoid obvious repeated
+mistakes.
 
 - [ ] Read the anchor files once they exist.
 
@@ -830,6 +785,53 @@ where the learned policy changed over training.
 
 - [ ] Replay self-play games from early and later checkpoints in the HTML
       viewer, looking for strategy changes rather than just final scores.
+
+## Stage 3.8: Advanced Evaluation Strategy
+
+Goal: add external and tactical holdouts that catch narrow self-play progress
+before it becomes the promotion strategy. These metrics should explain whether
+new checkpoints are learning generally useful Dots and Boxes tactics, not just
+exploiting the previous checkpoint.
+
+- [ ] Track avoidable box giveaways in every eval summary.
+
+The `strategic` summary reports how often the evaluated player makes a
+non-scoring move that creates one or more 3-sided boxes while at least one safe
+non-scoring move was still available. This is a direct signal for premature
+box giveaways before chain control begins.
+
+Key fields:
+
+- `unsafeOpenerMoves`: moves that opened a 3-sided box while a safe move existed,
+- `unsafeOpenedThreeSidedBoxes`: number of 3-sided boxes created by those moves,
+- `unsafeOpenerRate`: unsafe opener moves divided by non-scoring moves,
+- `forcedOpenerMoves`: opener moves made when no safe move existed.
+
+- [ ] Backfill the metric on existing replay files.
+
+```bash
+python -m dots_boxes_mcts.strategic_eval \
+  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter001-guided-sims250-vs-papg-browser-model-second-retry.jsonl \
+  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter007-guided-sims250-vs-papg-browser-model-second-retry.jsonl \
+  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter007-guided-sims250-vs-papg-browser-model-second.jsonl \
+  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter007-guided-sims250-vs-papg-browser.jsonl \
+  runs/papg/stage-3.6/archive-pre-ledger-20260608/stage3.3-1000-sims250-vs-papg-browser-model-second-retry.jsonl \
+  runs/papg/stage-3.6/archive-pre-ledger-20260608/stage3.3-1000-sims250-vs-papg-browser-model-second.jsonl \
+  runs/papg/stage-3.6/iter016-guided-sims250-vs-papg-browser-model-second.jsonl \
+  --summary-out runs/stage-3.8/papg-stage3.6-strategic-summary.json \
+  --suite-out runs/stage-3.8/papg-stage3.6-unsafe-opener-positions.jsonl
+```
+
+The suite file stores the position immediately before each avoidable opener,
+the move the model chose, and the number of safe/scoring/opener moves available.
+Use it as a fixed diagnostic set before changing promotion rules.
+
+- [ ] Compare checkpoints by tactical trend, not only score.
+
+Ask whether `unsafeOpenerRate` and `unsafeOpenerPerGame` fall from early to
+later checkpoints. If final score improves but avoidable opener rate stays flat,
+the checkpoint may be winning for unrelated reasons and still vulnerable to
+PAPG-style punishment.
 
 ## Human Inspection Rhythm
 

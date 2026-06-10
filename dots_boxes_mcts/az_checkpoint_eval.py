@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from pathlib import Path
 
 from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.evaluate import summarize_records
-from dots_boxes_mcts.game import GameState, apply_move, new_game, state_snapshot
+from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 from dots_boxes_mcts.mcts import result_payload
 from dots_boxes_mcts.self_play import write_jsonl
+from dots_boxes_mcts.strategic_eval import summarize_strategic_records
 
 
 def play_checkpoint_match_game(
@@ -20,11 +22,15 @@ def play_checkpoint_match_game(
     seed: int = 1,
     candidate_player: int = 0,
     c_puct: float = 1.5,
+    opening_random_plies: int = 2,
     device: str = "cpu",
 ) -> dict:
     if candidate_player not in {0, 1}:
         raise ValueError("candidate_player must be 0 or 1")
+    if opening_random_plies < 0:
+        raise ValueError("opening_random_plies must be non-negative")
 
+    rng = random.Random(seed)
     evaluators = {
         candidate_player: NetworkEvaluator(checkpoint=candidate_checkpoint, device=device),
         1 - candidate_player: NetworkEvaluator(checkpoint=baseline_checkpoint, device=device),
@@ -40,7 +46,15 @@ def play_checkpoint_match_game(
     }
     state = new_game(rows=rows, cols=cols)
     moves: list[str] = []
+    opening_moves: list[str] = []
     decisions: list[dict] = []
+    for _ in range(opening_random_plies):
+        if state.terminal:
+            break
+        move = rng.choice(legal_moves(state))
+        opening_moves.append(move)
+        moves.append(move)
+        state = apply_move(state, move)
 
     while not state.terminal:
         result = searchers[state.current_player].search(state)
@@ -67,6 +81,8 @@ def play_checkpoint_match_game(
         candidate_player=candidate_player,
         simulations=simulations,
         c_puct=c_puct,
+        opening_random_plies=opening_random_plies,
+        opening_moves=opening_moves,
         decisions=decisions,
     )
 
@@ -80,6 +96,7 @@ def generate_checkpoint_match_games(
     simulations: int = 100,
     seed: int = 1,
     c_puct: float = 1.5,
+    opening_random_plies: int = 2,
     device: str = "cpu",
     alternate_colors: bool = True,
 ) -> list[dict]:
@@ -95,6 +112,7 @@ def generate_checkpoint_match_games(
             seed=seed + game_index,
             candidate_player=candidate_player,
             c_puct=c_puct,
+            opening_random_plies=opening_random_plies,
             device=device,
         )
         record["gameIndex"] = game_index
@@ -128,6 +146,10 @@ def summarize_checkpoint_match_records(records: list[dict]) -> dict:
         "losses": losses,
         "winRate": wins / len(records),
         "averageScoreMargin": sum(candidate_margins) / len(candidate_margins),
+        "strategic": summarize_strategic_records(
+            records,
+            perspective_player=lambda record: int(record["candidatePlayer"]),
+        ),
     }
 
 
@@ -141,6 +163,8 @@ def checkpoint_match_record(
     simulations: int,
     c_puct: float,
     decisions: list[dict],
+    opening_random_plies: int = 0,
+    opening_moves: list[str] | None = None,
 ) -> dict:
     baseline_player = 1 - candidate_player
     return {
@@ -157,6 +181,8 @@ def checkpoint_match_record(
         "candidatePlayer": candidate_player,
         "simulations": simulations,
         "cPuct": c_puct,
+        "openingRandomPlies": opening_random_plies,
+        "openingMoves": opening_moves or [],
         "moves": moves,
         "decisions": decisions,
         "finalScores": [state.scores[0], state.scores[1]],
@@ -178,6 +204,7 @@ def main() -> None:
     parser.add_argument("--simulations", type=int, default=100)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--c-puct", type=float, default=1.5)
+    parser.add_argument("--opening-random-plies", type=int, default=2)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--no-alternate-colors", action="store_true")
     parser.add_argument("--out", type=Path, default=Path("runs/stage-3.6/checkpoint-match.jsonl"))
@@ -195,6 +222,7 @@ def main() -> None:
         simulations=args.simulations,
         seed=args.seed,
         c_puct=args.c_puct,
+        opening_random_plies=args.opening_random_plies,
         device=args.mlx_device,
         alternate_colors=not args.no_alternate_colors,
     )
