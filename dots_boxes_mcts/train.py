@@ -109,6 +109,46 @@ def load_mlx_checkpoint(path: Path, device: str = "cpu") -> MlxPolicyValueNetwor
     return model
 
 
+def checkpoint_metadata(path: Path) -> dict[str, int]:
+    data = np.load(path)
+    required = {
+        "board_height",
+        "board_width",
+        "channels",
+        "action_count",
+        "hidden_size",
+        "residual_blocks",
+    }
+    missing = sorted(required - set(data.files))
+    if missing:
+        raise ValueError(f"Checkpoint is missing metadata fields: {', '.join(missing)}")
+    return {key: int(data[key][0]) for key in required}
+
+
+def validate_checkpoint_compatible(
+    checkpoint: Path,
+    x: np.ndarray,
+    policy_target: np.ndarray,
+) -> None:
+    metadata = checkpoint_metadata(checkpoint)
+    expected = {
+        "board_height": x.shape[1],
+        "board_width": x.shape[2],
+        "channels": x.shape[3],
+        "action_count": policy_target.shape[1],
+    }
+    mismatches = [
+        f"{key} checkpoint={metadata[key]} examples={value}"
+        for key, value in expected.items()
+        if metadata[key] != value
+    ]
+    if mismatches:
+        raise ValueError(
+            "Initial checkpoint is incompatible with the training examples: "
+            + "; ".join(mismatches)
+        )
+
+
 class ResidualBlock:
     def __init__(self, channels: int, nn) -> None:
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False)
@@ -336,7 +376,7 @@ def example_from_decision(
         player=player,
         policy=policy_from_search(state, decision["search"]),
         value=value_from_record(record, player),
-        selected_move=decision["search"]["move"],
+        selected_move=decision.get("selectedMove", decision["search"]["move"]),
         source={
             "recordIndex": record_index,
             "decisionIndex": decision_index,
@@ -516,6 +556,7 @@ def train_checkpoint(
     diagnostics_every: int = 1,
     device: str = "cpu",
     residual_blocks: int = 4,
+    init_checkpoint: Path | None = None,
 ) -> tuple[MlxPolicyValueNetwork, list[dict]]:
     if epochs < 1:
         raise ValueError("epochs must be at least 1")
@@ -530,18 +571,22 @@ def train_checkpoint(
         validation_fraction=validation_fraction,
         seed=seed,
     )
-    mx = require_mlx(device=device)
     rng = np.random.default_rng(seed)
-    model = MlxPolicyValueNetwork(
-        board_height=x.shape[1],
-        board_width=x.shape[2],
-        channels=x.shape[3],
-        action_count=policy_target.shape[1],
-        hidden_size=hidden_size,
-        residual_blocks=residual_blocks,
-        seed=seed,
-        device=device,
-    )
+    if init_checkpoint is None:
+        model = MlxPolicyValueNetwork(
+            board_height=x.shape[1],
+            board_width=x.shape[2],
+            channels=x.shape[3],
+            action_count=policy_target.shape[1],
+            hidden_size=hidden_size,
+            residual_blocks=residual_blocks,
+            seed=seed,
+            device=device,
+        )
+    else:
+        validate_checkpoint_compatible(init_checkpoint, x=x, policy_target=policy_target)
+        model = load_mlx_checkpoint(init_checkpoint, device=device)
+    mx = require_mlx(device=device)
     optimizer = mlx_optimizer(learning_rate=learning_rate, device=device)
     diagnostics: list[dict] = []
 
@@ -712,6 +757,11 @@ def main() -> None:
     parser.add_argument("--diagnostics-every", type=int, default=50)
     parser.add_argument("--diagnostics-out", type=Path)
     parser.add_argument("--checkpoint-out", type=Path)
+    parser.add_argument(
+        "--init-checkpoint",
+        type=Path,
+        help="Initialize training from an existing checkpoint instead of random weights.",
+    )
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     args = parser.parse_args()
 
@@ -729,6 +779,9 @@ def main() -> None:
     if args.preview or (args.out is None and args.overfit_epochs <= 0 and args.train_epochs <= 0):
         for example in examples:
             print(json.dumps(serializable_example(example, include_encoding_summary=True), sort_keys=True))
+
+    if args.init_checkpoint is not None and args.train_epochs <= 0:
+        raise SystemExit("--init-checkpoint is only used with --train-epochs")
 
     if args.overfit_epochs > 0:
         model, diagnostics = overfit_examples(
@@ -759,6 +812,7 @@ def main() -> None:
             validation_fraction=args.validation_fraction,
             diagnostics_every=args.diagnostics_every,
             device=args.mlx_device,
+            init_checkpoint=args.init_checkpoint,
         )
         for item in diagnostics:
             print(json.dumps(item, sort_keys=True))

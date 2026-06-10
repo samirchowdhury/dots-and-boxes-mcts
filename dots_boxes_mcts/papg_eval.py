@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
+from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.evaluate import summarize_records
 from dots_boxes_mcts.external_games import edge_to_papg_index, external_game_record
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
@@ -38,10 +39,80 @@ def play_mcts_vs_papg_game(
     timeout: float = 30.0,
     debug_dir: Path | None = None,
 ) -> dict:
+    mcts = UCTMCTS(simulations=simulations, seed=seed)
+    return play_searcher_vs_papg_game(
+        searcher=mcts,
+        bot=f"uct_mcts_{simulations}",
+        rows=rows,
+        cols=cols,
+        simulations=simulations,
+        seed=seed,
+        request_delay=request_delay,
+        timeout=timeout,
+        debug_dir=debug_dir,
+        notes=f"Live Papg evaluation with {simulations} UCT simulations per move.",
+    )
+
+
+def play_network_guided_mcts_vs_papg_game(
+    *,
+    checkpoint: Path,
+    rows: int = 4,
+    cols: int = 4,
+    simulations: int = 100,
+    seed: int = 1,
+    c_puct: float = 1.5,
+    request_delay: float = 5.0,
+    timeout: float = 30.0,
+    debug_dir: Path | None = None,
+    device: str = "cpu",
+) -> dict:
+    evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    searcher = NetworkGuidedMCTS(
+        evaluator=evaluator,
+        simulations=simulations,
+        c_puct=c_puct,
+        seed=seed,
+    )
+    return play_searcher_vs_papg_game(
+        searcher=searcher,
+        bot=checkpoint_bot_name(checkpoint=checkpoint, simulations=simulations),
+        rows=rows,
+        cols=cols,
+        simulations=simulations,
+        seed=seed,
+        request_delay=request_delay,
+        timeout=timeout,
+        debug_dir=debug_dir,
+        notes=(
+            f"Live Papg evaluation with {checkpoint} and "
+            f"{simulations} network-guided simulations per move."
+        ),
+        record_fields={
+            "checkpoint": str(checkpoint),
+            "cPuct": c_puct,
+            "mlxDevice": device,
+        },
+    )
+
+
+def play_searcher_vs_papg_game(
+    *,
+    searcher,
+    bot: str,
+    rows: int,
+    cols: int,
+    simulations: int,
+    seed: int,
+    request_delay: float,
+    timeout: float,
+    debug_dir: Path | None,
+    notes: str,
+    record_fields: dict | None = None,
+) -> dict:
     client = PapgClient(request_delay=request_delay, timeout=timeout, debug_dir=debug_dir)
     page = client.new_game(rows=rows, cols=cols)
     state = new_game(rows=rows, cols=cols)
-    mcts = UCTMCTS(simulations=simulations, seed=seed)
     moves: list[str] = []
     decisions: list[dict] = []
 
@@ -53,7 +124,7 @@ def play_mcts_vs_papg_game(
         if state.terminal:
             break
 
-        result = mcts.search(state)
+        result = searcher.search(state)
         move = result.move
         decisions.append(
             {
@@ -75,17 +146,23 @@ def play_mcts_vs_papg_game(
     record = external_game_record(
         source="papg",
         opponent="papg",
-        bot=f"uct_mcts_{simulations}",
+        bot=bot,
         rows=rows,
         cols=cols,
         moves=moves,
         our_player=0,
-        notes=f"Live Papg evaluation with {simulations} UCT simulations per move.",
+        notes=notes,
     )
     record["seed"] = seed
     record["simulations"] = simulations
     record["decisions"] = decisions
+    if record_fields:
+        record.update(record_fields)
     return record
+
+
+def checkpoint_bot_name(*, checkpoint: Path, simulations: int) -> str:
+    return f"network_guided_mcts_{simulations}_{checkpoint.stem}"
 
 
 def sync_papg_moves(state: GameState, page: PapgPage) -> list[str]:
@@ -124,23 +201,79 @@ def generate_mcts_vs_papg_games(
     return records
 
 
-def infer_papg_reply(state: GameState, missing_moves: list[str]) -> list[str]:
+def generate_network_guided_mcts_vs_papg_games(
+    *,
+    checkpoint: Path,
+    games: int,
+    rows: int = 4,
+    cols: int = 4,
+    simulations: int = 100,
+    seed: int = 1,
+    c_puct: float = 1.5,
+    request_delay: float = 5.0,
+    timeout: float = 30.0,
+    debug_dir: Path | None = None,
+    device: str = "cpu",
+) -> list[dict]:
+    records: list[dict] = []
+    evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    for game_index in range(games):
+        game_seed = seed + game_index
+        searcher = NetworkGuidedMCTS(
+            evaluator=evaluator,
+            simulations=simulations,
+            c_puct=c_puct,
+            seed=game_seed,
+        )
+        record = play_searcher_vs_papg_game(
+            searcher=searcher,
+            bot=checkpoint_bot_name(checkpoint=checkpoint, simulations=simulations),
+            rows=rows,
+            cols=cols,
+            simulations=simulations,
+            seed=game_seed,
+            request_delay=request_delay,
+            timeout=timeout,
+            debug_dir=debug_dir,
+            notes=(
+                f"Live Papg evaluation with {checkpoint} and "
+                f"{simulations} network-guided simulations per move."
+            ),
+            record_fields={
+                "checkpoint": str(checkpoint),
+                "cPuct": c_puct,
+                "mlxDevice": device,
+            },
+        )
+        record["gameIndex"] = game_index
+        records.append(record)
+    return records
+
+
+def infer_papg_reply(
+    state: GameState,
+    missing_moves: list[str],
+    papg_player: int = 1,
+) -> list[str]:
     if not missing_moves:
         return []
+    if papg_player not in {0, 1}:
+        raise ValueError("papg_player must be 0 or 1")
 
     missing = set(missing_moves)
     solutions: list[list[str]] = []
+    our_player = 1 - papg_player
 
     def search(current_state: GameState, remaining: set[str], sequence: list[str]) -> None:
         if not remaining:
             solutions.append(sequence)
             return
-        if current_state.current_player != 1:
+        if current_state.current_player != papg_player:
             return
 
         for move in sorted(remaining):
             next_state = apply_move(current_state, move)
-            if next_state.current_player == 0 and len(remaining) > 1:
+            if next_state.current_player == our_player and len(remaining) > 1:
                 continue
             search(next_state, remaining - {move}, [*sequence, move])
 
@@ -327,11 +460,14 @@ def edge_owner_from_cell(cell_html: str) -> int | None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate plain UCT MCTS against the live Papg bot.")
+    parser = argparse.ArgumentParser(description="Evaluate an MCTS player against the live Papg bot.")
     parser.add_argument("--games", type=int, default=1)
     parser.add_argument("--rows", type=int, default=4)
     parser.add_argument("--cols", type=int, default=4)
     parser.add_argument("--simulations", type=int, required=True)
+    parser.add_argument("--checkpoint", type=Path, help="Optional MLX checkpoint for network-guided MCTS.")
+    parser.add_argument("--c-puct", type=float, default=1.5)
+    parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--request-delay", type=float, default=5.0)
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -342,16 +478,31 @@ def main() -> None:
     if args.games < 1:
         raise SystemExit("--games must be at least 1")
 
-    records = generate_mcts_vs_papg_games(
-        games=args.games,
-        rows=args.rows,
-        cols=args.cols,
-        simulations=args.simulations,
-        seed=args.seed,
-        request_delay=args.request_delay,
-        timeout=args.timeout,
-        debug_dir=args.debug_dir,
-    )
+    if args.checkpoint is None:
+        records = generate_mcts_vs_papg_games(
+            games=args.games,
+            rows=args.rows,
+            cols=args.cols,
+            simulations=args.simulations,
+            seed=args.seed,
+            request_delay=args.request_delay,
+            timeout=args.timeout,
+            debug_dir=args.debug_dir,
+        )
+    else:
+        records = generate_network_guided_mcts_vs_papg_games(
+            checkpoint=args.checkpoint,
+            games=args.games,
+            rows=args.rows,
+            cols=args.cols,
+            simulations=args.simulations,
+            seed=args.seed,
+            c_puct=args.c_puct,
+            request_delay=args.request_delay,
+            timeout=args.timeout,
+            debug_dir=args.debug_dir,
+            device=args.mlx_device,
+        )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_records(records, mcts_player=0), sort_keys=True))
     print(f"Wrote {len(records)} games to {args.out}")

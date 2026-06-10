@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 import time
 from pathlib import Path
@@ -9,10 +10,12 @@ from typing import Callable
 
 from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.game import GameState, apply_move, new_game, state_snapshot
-from dots_boxes_mcts.mcts import result_payload
+from dots_boxes_mcts.mcts import SearchResult, result_payload
 from dots_boxes_mcts.self_play import write_jsonl
 
 ProgressLogger = Callable[[str], None]
+DEFAULT_TEMPERATURE_MOVES = 8
+DEFAULT_SAMPLING_TEMPERATURE = 1.0
 
 
 def play_guided_self_play_game(
@@ -24,11 +27,19 @@ def play_guided_self_play_game(
     c_puct: float = 1.5,
     root_dirichlet_alpha: float = 0.3,
     root_exploration_fraction: float = 0.25,
+    temperature_moves: int = DEFAULT_TEMPERATURE_MOVES,
+    sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
     progress_logger: ProgressLogger | None = None,
     game_index: int | None = None,
     total_games: int | None = None,
 ) -> dict:
+    if temperature_moves < 0:
+        raise ValueError("temperature_moves must be non-negative")
+    if sampling_temperature <= 0:
+        raise ValueError("sampling_temperature must be positive")
+
+    move_rng = random.Random(seed)
     evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
     searcher = NetworkGuidedMCTS(
         evaluator=evaluator,
@@ -47,6 +58,13 @@ def play_guided_self_play_game(
         turn_start = time.perf_counter()
         result = searcher.search(state)
         search_seconds = time.perf_counter() - turn_start
+        move, move_selection = select_self_play_move(
+            result=result,
+            turn=len(moves),
+            rng=move_rng,
+            temperature_moves=temperature_moves,
+            sampling_temperature=sampling_temperature,
+        )
         player = state.current_player
         scores_before = state.scores
         decisions.append(
@@ -55,10 +73,15 @@ def play_guided_self_play_game(
                 "player": player,
                 "state": state_snapshot(state),
                 "search": result_payload(result),
+                "selectedMove": move,
+                "searchPreferredMove": result.move,
+                "moveSelection": move_selection,
+                "samplingTemperature": sampling_temperature,
+                "temperatureMoves": temperature_moves,
             }
         )
-        moves.append(result.move)
-        state = apply_move(state, result.move)
+        moves.append(move)
+        state = apply_move(state, move)
         if progress_logger is not None:
             progress_logger(
                 format_turn_progress(
@@ -67,7 +90,7 @@ def play_guided_self_play_game(
                     seed=seed,
                     turn=len(moves) - 1,
                     player=player,
-                    move=result.move,
+                    move=move,
                     search_seconds=search_seconds,
                     simulations=simulations,
                     legal_moves=len(result.stats),
@@ -98,6 +121,8 @@ def play_guided_self_play_game(
         c_puct=c_puct,
         root_dirichlet_alpha=root_dirichlet_alpha,
         root_exploration_fraction=root_exploration_fraction,
+        temperature_moves=temperature_moves,
+        sampling_temperature=sampling_temperature,
         decisions=decisions,
     )
 
@@ -112,6 +137,8 @@ def generate_guided_self_play_games(
     c_puct: float = 1.5,
     root_dirichlet_alpha: float = 0.3,
     root_exploration_fraction: float = 0.25,
+    temperature_moves: int = DEFAULT_TEMPERATURE_MOVES,
+    sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
     progress_logger: ProgressLogger | None = None,
 ) -> list[dict]:
@@ -126,6 +153,8 @@ def generate_guided_self_play_games(
             c_puct=c_puct,
             root_dirichlet_alpha=root_dirichlet_alpha,
             root_exploration_fraction=root_exploration_fraction,
+            temperature_moves=temperature_moves,
+            sampling_temperature=sampling_temperature,
             device=device,
             progress_logger=progress_logger,
             game_index=game_index,
@@ -134,6 +163,34 @@ def generate_guided_self_play_games(
         record["gameIndex"] = game_index
         records.append(record)
     return records
+
+
+def select_self_play_move(
+    result: SearchResult,
+    turn: int,
+    rng: random.Random,
+    temperature_moves: int = DEFAULT_TEMPERATURE_MOVES,
+    sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
+) -> tuple[str, str]:
+    if turn >= temperature_moves:
+        return result.move, "max_visit"
+
+    weighted_moves = [
+        (stat.move, float(stat.visits) ** (1.0 / sampling_temperature))
+        for stat in result.stats
+        if stat.visits > 0
+    ]
+    total_weight = sum(weight for _, weight in weighted_moves)
+    if total_weight <= 0:
+        return result.move, "max_visit"
+
+    threshold = rng.random() * total_weight
+    cumulative = 0.0
+    for move, weight in weighted_moves:
+        cumulative += weight
+        if cumulative >= threshold:
+            return move, "sampled_visit_counts"
+    return weighted_moves[-1][0], "sampled_visit_counts"
 
 
 def format_turn_progress(
@@ -216,6 +273,8 @@ def run_metadata(
     c_puct: float,
     root_dirichlet_alpha: float,
     root_exploration_fraction: float,
+    temperature_moves: int,
+    sampling_temperature: float,
     device: str,
     debug: bool,
 ) -> dict:
@@ -231,6 +290,8 @@ def run_metadata(
         "cPuct": c_puct,
         "rootDirichletAlpha": root_dirichlet_alpha,
         "rootExplorationFraction": root_exploration_fraction,
+        "temperatureMoves": temperature_moves,
+        "samplingTemperature": sampling_temperature,
         "mlxDevice": device,
         "debug": debug,
     }
@@ -287,6 +348,8 @@ def guided_self_play_record(
     c_puct: float,
     root_dirichlet_alpha: float,
     root_exploration_fraction: float,
+    temperature_moves: int,
+    sampling_temperature: float,
     decisions: list[dict],
 ) -> dict:
     return {
@@ -303,6 +366,8 @@ def guided_self_play_record(
         "cPuct": c_puct,
         "rootDirichletAlpha": root_dirichlet_alpha,
         "rootExplorationFraction": root_exploration_fraction,
+        "temperatureMoves": temperature_moves,
+        "samplingTemperature": sampling_temperature,
         "moves": moves,
         "decisions": decisions,
         "finalScores": [state.scores[0], state.scores[1]],
@@ -324,6 +389,8 @@ def main() -> None:
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--root-dirichlet-alpha", type=float, default=0.3)
     parser.add_argument("--root-exploration-fraction", type=float, default=0.25)
+    parser.add_argument("--temperature-moves", type=int, default=DEFAULT_TEMPERATURE_MOVES)
+    parser.add_argument("--sampling-temperature", type=float, default=DEFAULT_SAMPLING_TEMPERATURE)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument(
         "--debug",
@@ -346,6 +413,10 @@ def main() -> None:
         raise SystemExit("--games must be at least 1")
     if args.iteration is not None and args.iteration < 0:
         raise SystemExit("--iteration must be non-negative")
+    if args.temperature_moves < 0:
+        raise SystemExit("--temperature-moves must be non-negative")
+    if args.sampling_temperature <= 0:
+        raise SystemExit("--sampling-temperature must be positive")
 
     out_path = args.out or default_output_path(
         rows=args.rows,
@@ -371,6 +442,8 @@ def main() -> None:
         c_puct=args.c_puct,
         root_dirichlet_alpha=args.root_dirichlet_alpha,
         root_exploration_fraction=args.root_exploration_fraction,
+        temperature_moves=args.temperature_moves,
+        sampling_temperature=args.sampling_temperature,
         device=args.mlx_device,
         debug=args.debug,
     )
@@ -384,6 +457,8 @@ def main() -> None:
         c_puct=args.c_puct,
         root_dirichlet_alpha=args.root_dirichlet_alpha,
         root_exploration_fraction=args.root_exploration_fraction,
+        temperature_moves=args.temperature_moves,
+        sampling_temperature=args.sampling_temperature,
         device=args.mlx_device,
         progress_logger=(lambda message: print(message, file=sys.stderr)) if args.debug else None,
     )

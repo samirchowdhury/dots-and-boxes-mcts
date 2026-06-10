@@ -5,6 +5,7 @@ import pytest
 
 from dots_boxes_mcts.evaluate import play_mcts_vs_random_game
 from dots_boxes_mcts.train import (
+    checkpoint_metadata,
     examples_from_records,
     examples_from_payloads,
     overfit_examples,
@@ -13,6 +14,7 @@ from dots_boxes_mcts.train import (
     serializable_example,
     tensors_from_examples,
     train_checkpoint,
+    validate_checkpoint_compatible,
     value_from_record,
 )
 
@@ -76,6 +78,46 @@ def test_tensors_from_examples_match_training_shapes() -> None:
     assert value_target.shape == (4,)
     assert legal_mask.shape == (4, 12)
     assert np.allclose(policy_target.sum(axis=1), 1.0)
+
+
+def test_checkpoint_metadata_reads_saved_shape_fields(tmp_path) -> None:
+    checkpoint = tmp_path / "checkpoint.npz"
+    np.savez(
+        checkpoint,
+        board_height=np.array([5]),
+        board_width=np.array([5]),
+        channels=np.array([8]),
+        action_count=np.array([12]),
+        hidden_size=np.array([64]),
+        residual_blocks=np.array([4]),
+    )
+
+    assert checkpoint_metadata(checkpoint) == {
+        "board_height": 5,
+        "board_width": 5,
+        "channels": 8,
+        "action_count": 12,
+        "hidden_size": 64,
+        "residual_blocks": 4,
+    }
+
+
+def test_validate_checkpoint_compatible_rejects_wrong_action_count(tmp_path) -> None:
+    checkpoint = tmp_path / "checkpoint.npz"
+    np.savez(
+        checkpoint,
+        board_height=np.array([5]),
+        board_width=np.array([5]),
+        channels=np.array([8]),
+        action_count=np.array([13]),
+        hidden_size=np.array([64]),
+        residual_blocks=np.array([4]),
+    )
+    x = np.zeros((2, 5, 5, 8), dtype=np.float32)
+    policy_target = np.zeros((2, 12), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="action_count"):
+        validate_checkpoint_compatible(checkpoint, x=x, policy_target=policy_target)
 
 
 def test_tiny_overfit_network_reduces_loss_on_small_batch() -> None:

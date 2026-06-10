@@ -10,6 +10,10 @@ export async function runPapgBrowserBatch({
   simulationsList = [10, 50, 100],
   games = 1,
   seed = 1,
+  checkpoint = null,
+  cPuct = 1.5,
+  mlxDevice = "cpu",
+  decisionEndpoint = null,
   requestDelayMs = 5000,
   outDir = DEFAULT_OUT_DIR,
   onProgress = console.log,
@@ -27,7 +31,7 @@ export async function runPapgBrowserBatch({
     const records = [];
     for (let gameIndex = 0; gameIndex < games; gameIndex += 1) {
       const gameSeed = seed + gameIndex;
-      const out = `${outDir}/mcts-${simulations}-vs-papg-${rows}x${cols}.jsonl`;
+      const out = defaultOutPath({ outDir, rows, cols, simulations, checkpoint });
       const record = await playOnePapgBrowserGame({
         browser,
         tab,
@@ -35,13 +39,17 @@ export async function runPapgBrowserBatch({
         cols,
         simulations,
         seed: gameSeed,
+        checkpoint,
+        cPuct,
+        mlxDevice,
+        decisionEndpoint,
         requestDelayMs,
         out,
         onProgress: (message) => onProgress(`[${simulations} sim game ${gameIndex + 1}/${games}] ${message}`),
       });
       records.push(record);
     }
-    summaries.push(summarize(records, simulations));
+    summaries.push(summarize(records, simulations, checkpoint));
   }
   return summaries;
 }
@@ -53,20 +61,25 @@ export async function playOnePapgBrowserGame({
   cols = 4,
   simulations = 100,
   seed = 1,
+  checkpoint = null,
+  cPuct = 1.5,
+  mlxDevice = "cpu",
+  decisionEndpoint = null,
   requestDelayMs = 5000,
-  out = `${DEFAULT_OUT_DIR}/mcts-${simulations}-vs-papg-${rows}x${cols}.jsonl`,
+  out = defaultOutPath({ outDir: DEFAULT_OUT_DIR, rows, cols, simulations, checkpoint }),
   onProgress = console.log,
 } = {}) {
   const gameTab = tab ?? await browser.tabs.new();
   await startGame(gameTab, rows, cols);
 
   let moves = [];
+  const decisions = [];
   let finalRecord = null;
-  const basePayload = { rows, cols, simulations, seed, out };
+  const basePayload = { rows, cols, simulations, seed, checkpoint, cPuct, mlxDevice, decisionEndpoint, out };
 
   for (let turn = 0; turn < 120; turn += 1) {
     const info = await readBoardInfo(gameTab);
-    const decision = runPythonDecision({
+    const decision = await runDecision({
       ...basePayload,
       moves,
       drawn_edges: info.drawn,
@@ -74,14 +87,16 @@ export async function playOnePapgBrowserGame({
     moves = decision.moves;
 
     if (decision.terminal) {
-      finalRecord = runPythonDecision({
+      finalRecord = await runDecision({
         ...basePayload,
         moves,
         drawn_edges: info.drawn,
+        decisions,
         write_record: true,
       });
       break;
     }
+    decisions.push(decision.decision);
 
     const freshInfo = await readBoardInfo(gameTab);
     const href = freshInfo.links[decision.move];
@@ -100,10 +115,11 @@ export async function playOnePapgBrowserGame({
 
   if (!finalRecord) {
     const info = await readBoardInfo(gameTab);
-    finalRecord = runPythonDecision({
+    finalRecord = await runDecision({
       ...basePayload,
       moves,
       drawn_edges: info.drawn,
+      decisions,
       write_record: true,
     });
   }
@@ -112,6 +128,27 @@ export async function playOnePapgBrowserGame({
     await gameTab.close();
   }
   return finalRecord;
+}
+
+async function runDecision(payload) {
+  if (payload.decisionEndpoint) {
+    return await runEndpointDecision(payload);
+  }
+  return runPythonDecision(payload);
+}
+
+async function runEndpointDecision(payload) {
+  const response = await fetch(payload.decisionEndpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(text);
+  }
+  const parsed = JSON.parse(text);
+  return parsed.record || parsed;
 }
 
 async function clickPapgMoveLink(tab, href) {
@@ -239,12 +276,20 @@ import json
 from pathlib import Path
 from dots_boxes_mcts.game import apply_move, new_game
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
+from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.external_games import edge_to_papg_index, external_game_record, append_jsonl
 from dots_boxes_mcts.papg_eval import infer_papg_reply
 
 payload = json.loads(base64.b64decode("${encoded}"))
 rows = payload["rows"]
 cols = payload["cols"]
+checkpoint = payload.get("checkpoint")
+simulations = payload["simulations"]
+bot = (
+    f"network_guided_mcts_{simulations}_{Path(checkpoint).stem}"
+    if checkpoint
+    else f"uct_mcts_{simulations}"
+)
 state = new_game(rows=rows, cols=cols)
 moves = list(payload["moves"])
 for move in moves:
@@ -260,21 +305,32 @@ if payload.get("write_record"):
     record = external_game_record(
         source="papg",
         opponent="papg",
-        bot=f"uct_mcts_{payload['simulations']}",
+        bot=bot,
         rows=rows,
         cols=cols,
         moves=moves,
         our_player=0,
-        notes="Browser-backed Stage 2.5 Papg game.",
+        notes=(
+            "Browser-backed Papg game with network-guided MCTS."
+            if checkpoint
+            else "Browser-backed Stage 2.5 Papg game."
+        ),
     )
     record["seed"] = payload["seed"]
-    record["simulations"] = payload["simulations"]
+    record["simulations"] = simulations
+    record["decisions"] = payload.get("decisions", [])
+    if checkpoint:
+        record["checkpoint"] = checkpoint
+        record["cPuct"] = payload["cPuct"]
+        record["mlxDevice"] = payload["mlxDevice"]
     append_jsonl(record, Path(payload["out"]))
     print(json.dumps({
         "moves": moves,
         "terminal": record["terminal"],
         "scores": record["finalScores"],
         "winner": record["winner"],
+        "finalScores": record["finalScores"],
+        "record": record,
     }))
 elif state.terminal:
     print(json.dumps({
@@ -284,16 +340,42 @@ elif state.terminal:
         "winner": state.winner,
     }))
 else:
-    result = UCTMCTS(
-        simulations=payload["simulations"],
-        seed=payload["seed"] + len(moves),
-    ).search(state)
+    if checkpoint:
+        evaluator = NetworkEvaluator(checkpoint=Path(checkpoint), device=payload["mlxDevice"])
+        searcher = NetworkGuidedMCTS(
+            evaluator=evaluator,
+            simulations=simulations,
+            c_puct=payload["cPuct"],
+            seed=payload["seed"] + len(moves),
+        )
+    else:
+        searcher = UCTMCTS(
+            simulations=simulations,
+            seed=payload["seed"] + len(moves),
+        )
+    result = searcher.search(state)
     print(json.dumps({
         "moves": moves,
         "terminal": False,
         "move": result.move,
         "index": edge_to_papg_index(result.move, rows=rows, cols=cols),
         "search": result_payload(result),
+        "decision": {
+            "turn": len(moves),
+            "player": state.current_player,
+            "state": {
+                "rows": state.rows,
+                "cols": state.cols,
+                "currentPlayer": state.current_player,
+                "edges": sorted(state.edges),
+                "edgeOwners": [[edge, owner] for edge, owner in state.edge_owners],
+                "boxes": [[cell for cell in row] for row in state.boxes],
+                "scores": [state.scores[0], state.scores[1]],
+                "terminal": state.terminal,
+                "winner": state.winner,
+            },
+            "search": result_payload(result),
+        },
     }))
 `;
 
@@ -310,16 +392,21 @@ else:
   if (result.status !== 0) {
     throw new Error(result.stderr || result.stdout);
   }
-  return JSON.parse(result.stdout.trim().split("\\n").at(-1));
+  const parsed = JSON.parse(result.stdout.trim().split("\\n").at(-1));
+  return parsed.record || parsed;
 }
 
-function summarize(records, simulations) {
+function summarize(records, simulations, checkpoint = null) {
   const wins = records.filter((record) => record.winner === 0).length;
   const draws = records.filter((record) => record.winner === "draw").length;
   const losses = records.length - wins - draws;
-  const margins = records.map((record) => record.scores[0] - record.scores[1]);
+  const margins = records.map((record) => {
+    const scores = record.finalScores || record.scores;
+    return scores[0] - scores[1];
+  });
   return {
     simulations,
+    checkpoint,
     games: records.length,
     wins,
     draws,
@@ -331,6 +418,14 @@ function summarize(records, simulations) {
 
 function pageStatus(text) {
   return text.match(/(Your move again\.|Your move\.|Click on the board to move\.|Game finished[^\n]*)/)?.[1] || "ready";
+}
+
+function defaultOutPath({ outDir, rows, cols, simulations, checkpoint }) {
+  if (!checkpoint) {
+    return `${outDir}/mcts-${simulations}-vs-papg-${rows}x${cols}.jsonl`;
+  }
+  const stem = checkpoint.split("/").at(-1).replace(/\\.npz$/, "");
+  return `${outDir}/${stem}-sims${simulations}-vs-papg-${rows}x${cols}.jsonl`;
 }
 
 function sleep(ms) {

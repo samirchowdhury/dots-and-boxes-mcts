@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 
 from dots_boxes_mcts.az_guided_self_play import (
@@ -7,7 +8,9 @@ from dots_boxes_mcts.az_guided_self_play import (
     format_turn_progress,
     metadata_output_path,
     run_metadata,
+    select_self_play_move,
 )
+from dots_boxes_mcts.mcts import SearchResult, SearchStats
 
 
 def test_format_turn_progress_includes_search_timing_and_game_position() -> None:
@@ -95,6 +98,8 @@ def test_run_metadata_records_full_parameter_set() -> None:
         c_puct=1.5,
         root_dirichlet_alpha=0.3,
         root_exploration_fraction=0.25,
+        temperature_moves=8,
+        sampling_temperature=1.0,
         device="gpu",
         debug=True,
     )
@@ -107,8 +112,56 @@ def test_run_metadata_records_full_parameter_set() -> None:
     assert metadata["cPuct"] == 1.5
     assert metadata["rootDirichletAlpha"] == 0.3
     assert metadata["rootExplorationFraction"] == 0.25
+    assert metadata["temperatureMoves"] == 8
+    assert metadata["samplingTemperature"] == 1.0
     assert metadata["mlxDevice"] == "gpu"
     assert metadata["debug"] is True
+
+
+def test_select_self_play_move_samples_from_visits_during_temperature_window() -> None:
+    result = SearchResult(
+        move="best",
+        simulations=10,
+        root_player=0,
+        stats=[
+            SearchStats(move="best", visits=9, mean_value=0.5),
+            SearchStats(move="explore", visits=1, mean_value=0.0),
+        ],
+    )
+
+    move, selection = select_self_play_move(
+        result=result,
+        turn=0,
+        rng=random.Random(2),
+        temperature_moves=8,
+        sampling_temperature=1.0,
+    )
+
+    assert move == "explore"
+    assert selection == "sampled_visit_counts"
+
+
+def test_select_self_play_move_uses_max_visit_after_temperature_window() -> None:
+    result = SearchResult(
+        move="best",
+        simulations=10,
+        root_player=0,
+        stats=[
+            SearchStats(move="best", visits=9, mean_value=0.5),
+            SearchStats(move="explore", visits=1, mean_value=0.0),
+        ],
+    )
+
+    move, selection = select_self_play_move(
+        result=result,
+        turn=8,
+        rng=random.Random(2),
+        temperature_moves=8,
+        sampling_temperature=1.0,
+    )
+
+    assert move == "best"
+    assert selection == "max_visit"
 
 
 def test_ensure_outputs_do_not_exist_refuses_existing_jsonl(tmp_path) -> None:

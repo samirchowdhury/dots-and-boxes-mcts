@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import pytest
 
 from dots_boxes_mcts.game import apply_move, new_game
 from dots_boxes_mcts.papg_eval import (
+    checkpoint_bot_name,
     edge_owner_from_cell,
+    generate_network_guided_mcts_vs_papg_games,
     infer_papg_reply,
     initial_papg_state_string,
     is_thinking_page,
@@ -81,8 +85,71 @@ def test_infer_papg_reply_orders_extra_turn_chain() -> None:
     assert reply[-1] == "v:0:0"
 
 
+def test_infer_papg_reply_can_treat_papg_as_first_player() -> None:
+    reply = infer_papg_reply(new_game(rows=2, cols=2), ["h:0:0"], papg_player=0)
+
+    assert reply == ["h:0:0"]
+
+
 def test_infer_papg_reply_rejects_impossible_order() -> None:
     state = apply_move(new_game(rows=3, cols=3), "h:0:0")
 
     with pytest.raises(ValueError, match="legal"):
         infer_papg_reply(state, ["h:2:0", "h:2:1", "v:0:0"])
+
+
+def test_checkpoint_bot_name_uses_checkpoint_stem() -> None:
+    assert checkpoint_bot_name(
+        checkpoint=Path("runs/stage-3.6/candidate.npz"),
+        simulations=250,
+    ) == "network_guided_mcts_250_candidate"
+
+
+def test_network_guided_papg_generation_passes_checkpoint_metadata(monkeypatch) -> None:
+    created_searchers = []
+
+    def fake_evaluator(*, checkpoint, device):
+        return {"checkpoint": checkpoint, "device": device}
+
+    class FakeSearcher:
+        def __init__(self, *, evaluator, simulations, c_puct, seed) -> None:
+            self.evaluator = evaluator
+            self.simulations = simulations
+            self.c_puct = c_puct
+            self.seed = seed
+            created_searchers.append(self)
+
+    def fake_play_searcher_vs_papg_game(**kwargs):
+        record = {
+            "seed": kwargs["seed"],
+            "bot": kwargs["bot"],
+            "simulations": kwargs["simulations"],
+            "finalScores": [1, 0],
+            "winner": 0,
+            "terminal": True,
+        }
+        record.update(kwargs["record_fields"])
+        return record
+
+    monkeypatch.setattr("dots_boxes_mcts.papg_eval.NetworkEvaluator", fake_evaluator)
+    monkeypatch.setattr("dots_boxes_mcts.papg_eval.NetworkGuidedMCTS", FakeSearcher)
+    monkeypatch.setattr(
+        "dots_boxes_mcts.papg_eval.play_searcher_vs_papg_game",
+        fake_play_searcher_vs_papg_game,
+    )
+
+    records = generate_network_guided_mcts_vs_papg_games(
+        checkpoint=Path("runs/stage-3.6/candidate.npz"),
+        games=2,
+        simulations=250,
+        seed=10,
+        c_puct=1.25,
+        device="cpu",
+    )
+
+    assert [record["seed"] for record in records] == [10, 11]
+    assert [record["gameIndex"] for record in records] == [0, 1]
+    assert all(record["checkpoint"] == "runs/stage-3.6/candidate.npz" for record in records)
+    assert all(record["cPuct"] == 1.25 for record in records)
+    assert all(record["mlxDevice"] == "cpu" for record in records)
+    assert [searcher.seed for searcher in created_searchers] == [10, 11]
