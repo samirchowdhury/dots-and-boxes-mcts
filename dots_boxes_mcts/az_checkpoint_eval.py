@@ -24,6 +24,7 @@ def play_checkpoint_match_game(
     c_puct: float = 1.5,
     opening_random_plies: int = 2,
     device: str = "cpu",
+    reuse_tree: bool = True,
 ) -> dict:
     if candidate_player not in {0, 1}:
         raise ValueError("candidate_player must be 0 or 1")
@@ -48,16 +49,25 @@ def play_checkpoint_match_game(
     moves: list[str] = []
     opening_moves: list[str] = []
     decisions: list[dict] = []
+
+    def advance_searchers(move: str, next_state: GameState) -> None:
+        if reuse_tree:
+            for searcher in searchers.values():
+                searcher.advance_tree(move, next_state)
+
     for _ in range(opening_random_plies):
         if state.terminal:
             break
         move = rng.choice(legal_moves(state))
         opening_moves.append(move)
         moves.append(move)
-        state = apply_move(state, move)
+        next_state = apply_move(state, move)
+        advance_searchers(move, next_state)
+        state = next_state
 
     while not state.terminal:
-        result = searchers[state.current_player].search(state)
+        searcher = searchers[state.current_player]
+        result = searcher.search_reusing_tree(state) if reuse_tree else searcher.search(state)
         decisions.append(
             {
                 "turn": len(moves),
@@ -70,7 +80,9 @@ def play_checkpoint_match_game(
             }
         )
         moves.append(result.move)
-        state = apply_move(state, result.move)
+        next_state = apply_move(state, result.move)
+        advance_searchers(result.move, next_state)
+        state = next_state
 
     return checkpoint_match_record(
         state=state,
@@ -83,6 +95,7 @@ def play_checkpoint_match_game(
         c_puct=c_puct,
         opening_random_plies=opening_random_plies,
         opening_moves=opening_moves,
+        reuse_tree=reuse_tree,
         decisions=decisions,
     )
 
@@ -99,6 +112,7 @@ def generate_checkpoint_match_games(
     opening_random_plies: int = 2,
     device: str = "cpu",
     alternate_colors: bool = True,
+    reuse_tree: bool = True,
 ) -> list[dict]:
     records: list[dict] = []
     for game_index in range(games):
@@ -114,6 +128,7 @@ def generate_checkpoint_match_games(
             c_puct=c_puct,
             opening_random_plies=opening_random_plies,
             device=device,
+            reuse_tree=reuse_tree,
         )
         record["gameIndex"] = game_index
         records.append(record)
@@ -165,6 +180,7 @@ def checkpoint_match_record(
     decisions: list[dict],
     opening_random_plies: int = 0,
     opening_moves: list[str] | None = None,
+    reuse_tree: bool = True,
 ) -> dict:
     baseline_player = 1 - candidate_player
     return {
@@ -181,6 +197,7 @@ def checkpoint_match_record(
         "candidatePlayer": candidate_player,
         "simulations": simulations,
         "cPuct": c_puct,
+        "reuseTree": reuse_tree,
         "openingRandomPlies": opening_random_plies,
         "openingMoves": opening_moves or [],
         "moves": moves,
@@ -207,6 +224,7 @@ def main() -> None:
     parser.add_argument("--opening-random-plies", type=int, default=2)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--no-alternate-colors", action="store_true")
+    parser.add_argument("--disable-tree-reuse", action="store_true")
     parser.add_argument("--out", type=Path, default=Path("runs/stage-3.6/checkpoint-match.jsonl"))
     args = parser.parse_args()
 
@@ -225,6 +243,7 @@ def main() -> None:
         opening_random_plies=args.opening_random_plies,
         device=args.mlx_device,
         alternate_colors=not args.no_alternate_colors,
+        reuse_tree=not args.disable_tree_reuse,
     )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_checkpoint_match_records(records), sort_keys=True))

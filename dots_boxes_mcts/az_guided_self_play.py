@@ -30,6 +30,7 @@ def play_guided_self_play_game(
     temperature_moves: int = DEFAULT_TEMPERATURE_MOVES,
     sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
+    reuse_tree: bool = True,
     progress_logger: ProgressLogger | None = None,
     game_index: int | None = None,
     total_games: int | None = None,
@@ -56,7 +57,7 @@ def play_guided_self_play_game(
 
     while not state.terminal:
         turn_start = time.perf_counter()
-        result = searcher.search(state)
+        result = searcher.search_reusing_tree(state) if reuse_tree else searcher.search(state)
         search_seconds = time.perf_counter() - turn_start
         move, move_selection = select_self_play_move(
             result=result,
@@ -81,7 +82,10 @@ def play_guided_self_play_game(
             }
         )
         moves.append(move)
-        state = apply_move(state, move)
+        next_state = apply_move(state, move)
+        if reuse_tree:
+            searcher.advance_tree(move, next_state)
+        state = next_state
         if progress_logger is not None:
             progress_logger(
                 format_turn_progress(
@@ -123,6 +127,7 @@ def play_guided_self_play_game(
         root_exploration_fraction=root_exploration_fraction,
         temperature_moves=temperature_moves,
         sampling_temperature=sampling_temperature,
+        reuse_tree=reuse_tree,
         decisions=decisions,
     )
 
@@ -140,6 +145,7 @@ def generate_guided_self_play_games(
     temperature_moves: int = DEFAULT_TEMPERATURE_MOVES,
     sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
+    reuse_tree: bool = True,
     progress_logger: ProgressLogger | None = None,
 ) -> list[dict]:
     records: list[dict] = []
@@ -156,6 +162,7 @@ def generate_guided_self_play_games(
             temperature_moves=temperature_moves,
             sampling_temperature=sampling_temperature,
             device=device,
+            reuse_tree=reuse_tree,
             progress_logger=progress_logger,
             game_index=game_index,
             total_games=games,
@@ -277,6 +284,7 @@ def run_metadata(
     sampling_temperature: float,
     device: str,
     debug: bool,
+    reuse_tree: bool,
 ) -> dict:
     return {
         "output": str(out_path),
@@ -294,6 +302,7 @@ def run_metadata(
         "samplingTemperature": sampling_temperature,
         "mlxDevice": device,
         "debug": debug,
+        "reuseTree": reuse_tree,
     }
 
 
@@ -350,6 +359,7 @@ def guided_self_play_record(
     root_exploration_fraction: float,
     temperature_moves: int,
     sampling_temperature: float,
+    reuse_tree: bool,
     decisions: list[dict],
 ) -> dict:
     return {
@@ -368,6 +378,7 @@ def guided_self_play_record(
         "rootExplorationFraction": root_exploration_fraction,
         "temperatureMoves": temperature_moves,
         "samplingTemperature": sampling_temperature,
+        "reuseTree": reuse_tree,
         "moves": moves,
         "decisions": decisions,
         "finalScores": [state.scores[0], state.scores[1]],
@@ -392,6 +403,7 @@ def main() -> None:
     parser.add_argument("--temperature-moves", type=int, default=DEFAULT_TEMPERATURE_MOVES)
     parser.add_argument("--sampling-temperature", type=float, default=DEFAULT_SAMPLING_TEMPERATURE)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
+    parser.add_argument("--disable-tree-reuse", action="store_true")
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -446,6 +458,7 @@ def main() -> None:
         sampling_temperature=args.sampling_temperature,
         device=args.mlx_device,
         debug=args.debug,
+        reuse_tree=not args.disable_tree_reuse,
     )
     records = generate_guided_self_play_games(
         checkpoint=args.checkpoint,
@@ -460,6 +473,7 @@ def main() -> None:
         temperature_moves=args.temperature_moves,
         sampling_temperature=args.sampling_temperature,
         device=args.mlx_device,
+        reuse_tree=not args.disable_tree_reuse,
         progress_logger=(lambda message: print(message, file=sys.stderr)) if args.debug else None,
     )
     write_jsonl(records, out_path)

@@ -50,6 +50,7 @@ def test_checkpoint_match_record_names_candidate_and_baseline_roles() -> None:
     }
     assert record["candidateCheckpoint"] == "candidate.npz"
     assert record["baselineCheckpoint"] == "baseline.npz"
+    assert record["reuseTree"] is True
 
 
 def test_checkpoint_match_uses_seeded_random_openings_for_game_diversity(monkeypatch) -> None:
@@ -64,6 +65,12 @@ def test_checkpoint_match_uses_seeded_random_openings_for_game_diversity(monkeyp
                 root_player=state.current_player,
                 stats=[],
             )
+
+        def search_reusing_tree(self, state):
+            return self.search(state)
+
+        def advance_tree(self, move, next_state):
+            return True
 
     monkeypatch.setattr(
         "dots_boxes_mcts.az_checkpoint_eval.NetworkEvaluator",

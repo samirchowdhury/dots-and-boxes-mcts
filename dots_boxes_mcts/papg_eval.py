@@ -66,6 +66,7 @@ def play_network_guided_mcts_vs_papg_game(
     timeout: float = 30.0,
     debug_dir: Path | None = None,
     device: str = "cpu",
+    reuse_tree: bool = True,
 ) -> dict:
     evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
     searcher = NetworkGuidedMCTS(
@@ -92,7 +93,9 @@ def play_network_guided_mcts_vs_papg_game(
             "checkpoint": str(checkpoint),
             "cPuct": c_puct,
             "mlxDevice": device,
+            "reuseTree": reuse_tree,
         },
+        reuse_tree=reuse_tree,
     )
 
 
@@ -109,6 +112,7 @@ def play_searcher_vs_papg_game(
     debug_dir: Path | None,
     notes: str,
     record_fields: dict | None = None,
+    reuse_tree: bool = True,
 ) -> dict:
     client = PapgClient(request_delay=request_delay, timeout=timeout, debug_dir=debug_dir)
     page = client.new_game(rows=rows, cols=cols)
@@ -120,11 +124,17 @@ def play_searcher_vs_papg_game(
         synced_moves = sync_papg_moves(state, page)
         for papg_move in synced_moves:
             moves.append(papg_move)
-            state = apply_move(state, papg_move)
+            next_state = apply_move(state, papg_move)
+            advance_searcher_tree(searcher, papg_move, next_state, reuse_tree=reuse_tree)
+            state = next_state
         if state.terminal:
             break
 
-        result = searcher.search(state)
+        result = (
+            searcher.search_reusing_tree(state)
+            if reuse_tree and hasattr(searcher, "search_reusing_tree")
+            else searcher.search(state)
+        )
         move = result.move
         decisions.append(
             {
@@ -137,11 +147,15 @@ def play_searcher_vs_papg_game(
 
         page = client.play_move(page, edge_to_papg_index(move, rows=rows, cols=cols))
         moves.append(move)
-        state = apply_move(state, move)
+        next_state = apply_move(state, move)
+        advance_searcher_tree(searcher, move, next_state, reuse_tree=reuse_tree)
+        state = next_state
 
         for papg_move in sync_papg_moves(state, page):
             moves.append(papg_move)
-            state = apply_move(state, papg_move)
+            next_state = apply_move(state, papg_move)
+            advance_searcher_tree(searcher, papg_move, next_state, reuse_tree=reuse_tree)
+            state = next_state
 
     record = external_game_record(
         source="papg",
@@ -159,6 +173,11 @@ def play_searcher_vs_papg_game(
     if record_fields:
         record.update(record_fields)
     return record
+
+
+def advance_searcher_tree(searcher, move: str, next_state: GameState, *, reuse_tree: bool) -> None:
+    if reuse_tree and hasattr(searcher, "advance_tree"):
+        searcher.advance_tree(move, next_state)
 
 
 def checkpoint_bot_name(*, checkpoint: Path, simulations: int) -> str:
@@ -214,6 +233,7 @@ def generate_network_guided_mcts_vs_papg_games(
     timeout: float = 30.0,
     debug_dir: Path | None = None,
     device: str = "cpu",
+    reuse_tree: bool = True,
 ) -> list[dict]:
     records: list[dict] = []
     evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
@@ -243,7 +263,9 @@ def generate_network_guided_mcts_vs_papg_games(
                 "checkpoint": str(checkpoint),
                 "cPuct": c_puct,
                 "mlxDevice": device,
+                "reuseTree": reuse_tree,
             },
+            reuse_tree=reuse_tree,
         )
         record["gameIndex"] = game_index
         records.append(record)
@@ -468,6 +490,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, help="Optional MLX checkpoint for network-guided MCTS.")
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
+    parser.add_argument("--disable-tree-reuse", action="store_true")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--request-delay", type=float, default=5.0)
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -502,6 +525,7 @@ def main() -> None:
             timeout=args.timeout,
             debug_dir=args.debug_dir,
             device=args.mlx_device,
+            reuse_tree=not args.disable_tree_reuse,
         )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_records(records, mcts_player=0), sort_keys=True))

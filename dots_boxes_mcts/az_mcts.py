@@ -74,6 +74,8 @@ class NetworkGuidedMCTS:
         self.rng = random.Random(seed)
         self.root_dirichlet_alpha = root_dirichlet_alpha
         self.root_exploration_fraction = root_exploration_fraction
+        self._reuse_root: AZNode | None = None
+        self._reuse_root_noise_applied = False
 
     def search(self, state: GameState) -> SearchResult:
         if state.terminal:
@@ -123,6 +125,47 @@ class NetworkGuidedMCTS:
 
     def choose_move(self, state: GameState) -> str:
         return self.search(state).move
+
+    def search_reusing_tree(self, state: GameState) -> SearchResult:
+        if state.terminal:
+            raise ValueError("Cannot search from a terminal state.")
+        root = self._reusable_root_for(state)
+        self._prepare_root(root)
+        simulations_to_run = max(0, self.simulations - root.visits)
+        for _ in range(simulations_to_run):
+            self._run_simulation(root)
+        return self._search_result(root, self.simulations)
+
+    def advance_tree(self, move: str, next_state: GameState) -> bool:
+        if self._reuse_root is None:
+            self.reset_tree()
+            return False
+
+        child = self._reuse_root.children.get(move)
+        if child is not None and child.state == next_state:
+            self._reuse_root = child
+            self._reuse_root_noise_applied = False
+            return True
+
+        self.reset_tree()
+        return False
+
+    def reset_tree(self) -> None:
+        self._reuse_root = None
+        self._reuse_root_noise_applied = False
+
+    def _reusable_root_for(self, state: GameState) -> AZNode:
+        if self._reuse_root is None or self._reuse_root.state != state:
+            self._reuse_root = AZNode(state=state)
+            self._reuse_root_noise_applied = False
+        return self._reuse_root
+
+    def _prepare_root(self, root: AZNode) -> None:
+        if not root.expanded():
+            self._expand(root)
+        if not self._reuse_root_noise_applied:
+            self._add_root_noise(root)
+            self._reuse_root_noise_applied = True
 
     def _run_simulation(self, root: AZNode) -> None:
         node = root

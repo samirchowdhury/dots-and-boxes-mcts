@@ -23,6 +23,7 @@ def play_guided_vs_baseline_game(
     guided_player: int = 0,
     c_puct: float = 1.5,
     device: str = "cpu",
+    reuse_tree: bool = True,
 ) -> dict:
     if guided_player not in {0, 1}:
         raise ValueError("guided_player must be 0 or 1")
@@ -39,7 +40,7 @@ def play_guided_vs_baseline_game(
 
     while not state.terminal:
         if state.current_player == guided_player:
-            result = guided.search(state)
+            result = guided.search_reusing_tree(state) if reuse_tree else guided.search(state)
             move = result.move
             decisions.append(
                 {
@@ -56,7 +57,10 @@ def play_guided_vs_baseline_game(
             move = rng.choice(legal_moves(state))
 
         moves.append(move)
-        state = apply_move(state, move)
+        next_state = apply_move(state, move)
+        if reuse_tree:
+            guided.advance_tree(move, next_state)
+        state = next_state
 
     return guided_game_record(
         state=state,
@@ -68,6 +72,7 @@ def play_guided_vs_baseline_game(
         simulations=simulations,
         opponent_simulations=opponent_simulations,
         c_puct=c_puct,
+        reuse_tree=reuse_tree,
         decisions=decisions,
     )
 
@@ -84,6 +89,7 @@ def generate_guided_vs_baseline_games(
     guided_player: int = 0,
     c_puct: float = 1.5,
     device: str = "cpu",
+    reuse_tree: bool = True,
 ) -> list[dict]:
     records: list[dict] = []
     for game_index in range(games):
@@ -98,6 +104,7 @@ def generate_guided_vs_baseline_games(
             guided_player=guided_player,
             c_puct=c_puct,
             device=device,
+            reuse_tree=reuse_tree,
         )
         record["gameIndex"] = game_index
         records.append(record)
@@ -114,6 +121,7 @@ def guided_game_record(
     simulations: int,
     opponent_simulations: int,
     c_puct: float,
+    reuse_tree: bool,
     decisions: list[dict],
 ) -> dict:
     opponent_player = 1 if guided_player == 0 else 0
@@ -132,6 +140,7 @@ def guided_game_record(
         "simulations": simulations,
         "opponentSimulations": opponent_simulations,
         "cPuct": c_puct,
+        "reuseTree": reuse_tree,
         "moves": moves,
         "decisions": decisions,
         "finalScores": [state.scores[0], state.scores[1]],
@@ -154,6 +163,7 @@ def main() -> None:
     parser.add_argument("--guided-player", type=int, choices=[0, 1], default=0)
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
+    parser.add_argument("--disable-tree-reuse", action="store_true")
     parser.add_argument("--out", type=Path, default=Path("runs/stage-3.5/eval.jsonl"))
     args = parser.parse_args()
 
@@ -169,6 +179,7 @@ def main() -> None:
         guided_player=args.guided_player,
         c_puct=args.c_puct,
         device=args.mlx_device,
+        reuse_tree=not args.disable_tree_reuse,
     )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_records(records, mcts_player=args.guided_player), sort_keys=True))
