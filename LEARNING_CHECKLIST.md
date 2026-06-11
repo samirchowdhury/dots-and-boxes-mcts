@@ -807,24 +807,14 @@ Key fields:
 - `unsafeOpenerRate`: unsafe opener moves divided by non-scoring moves,
 - `forcedOpenerMoves`: opener moves made when no safe move existed.
 
-- [ ] Backfill the metric on existing replay files.
+Historical backfill artifacts from the first PAPG/checkpoint review live under
+`runs/stage-3.8/`. Use `python -m dots_boxes_mcts.strategic_eval ...` only when
+analyzing replay files that were generated before strategic metrics were added
+to the normal eval summaries.
 
-```bash
-python -m dots_boxes_mcts.strategic_eval \
-  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter001-guided-sims250-vs-papg-browser-model-second-retry.jsonl \
-  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter007-guided-sims250-vs-papg-browser-model-second-retry.jsonl \
-  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter007-guided-sims250-vs-papg-browser-model-second.jsonl \
-  runs/papg/stage-3.6/archive-pre-ledger-20260608/iter007-guided-sims250-vs-papg-browser.jsonl \
-  runs/papg/stage-3.6/archive-pre-ledger-20260608/stage3.3-1000-sims250-vs-papg-browser-model-second-retry.jsonl \
-  runs/papg/stage-3.6/archive-pre-ledger-20260608/stage3.3-1000-sims250-vs-papg-browser-model-second.jsonl \
-  runs/papg/stage-3.6/iter016-guided-sims250-vs-papg-browser-model-second.jsonl \
-  --summary-out runs/stage-3.8/papg-stage3.6-strategic-summary.json \
-  --suite-out runs/stage-3.8/papg-stage3.6-unsafe-opener-positions.jsonl
-```
-
-The suite file stores the position immediately before each avoidable opener,
-the move the model chose, and the number of safe/scoring/opener moves available.
-Use it as a fixed diagnostic set before changing promotion rules.
+The generated suite files store the position immediately before each avoidable
+opener, the move the model chose, and the number of safe/scoring/opener moves
+available. Use those as fixed diagnostic sets before changing promotion rules.
 
 - [ ] Compare checkpoints by tactical trend, not only score.
 
@@ -832,6 +822,131 @@ Ask whether `unsafeOpenerRate` and `unsafeOpenerPerGame` fall from early to
 later checkpoints. If final score improves but avoidable opener rate stays flat,
 the checkpoint may be winning for unrelated reasons and still vulnerable to
 PAPG-style punishment.
+
+## Stage 4.0: Strong-Search Restart Diagnosis
+
+Goal: record the tactical lesson from the unsafe-opener probe before restarting
+the AlphaZero-style loop.
+
+- [ ] Treat the 50k simulation probe as the Stage 4 motivation.
+
+On the fixed PAPG unsafe-opener suite under
+`runs/stage-3.8/papg-stage3.6-unsafe-opener-positions.jsonl`, plain UCT with
+random terminal rollouts behaved very differently by budget:
+
+- `5,000` simulations still selected unsafe openers in 36.4% of trials,
+- `50,000` simulations selected unsafe openers in 9.1% of trials,
+- at `50,000`, safe/scoring moves received about 64.0% of root visits on
+  average and unsafe openers still received about 36.0%.
+
+Interpretation: random-rollout UCT can eventually see the premature box-giveaway
+penalty, but the search teacher needs a much larger rollout budget than Stage 3
+used. Stage 4 should prioritize teacher strength before asking the student
+network to learn more.
+
+## Stage 4.1: Numba-Accelerated UCT Backend
+
+Goal: make 50k-simulation search practical enough for self-play and tactical
+probes.
+
+- [ ] Validate the fast backend against the Python rule engine.
+
+```bash
+python -m pytest -q tests/test_fast_mcts.py
+```
+
+The fast backend keeps Python `GameState` snapshots as the public/replay format,
+but performs rollout-heavy search with compact arrays. It must preserve:
+
+- legal edge ordering,
+- box scoring,
+- extra turns after scoring,
+- double-box captures,
+- terminal score values.
+
+- [ ] Run a single fast-search smoke test.
+
+```bash
+python -m dots_boxes_mcts.fast_mcts \
+  --rows 4 \
+  --cols 4 \
+  --simulations 50000 \
+  --seed 1
+```
+
+- [ ] Re-run the unsafe-opener probe with the Numba backend.
+
+```bash
+python -m dots_boxes_mcts.mcts_simulation_probe \
+  runs/stage-3.8/papg-stage3.6-unsafe-opener-positions.jsonl \
+  --inputs-are-positions \
+  --backend numba \
+  --simulations 50000 \
+  --seeds 1,2,3 \
+  --out-dir runs/stage-4/numba-unsafe-opener-probe-sims50000
+```
+
+The first acceptance target is not exact bit-for-bit equality with Python UCT,
+because both searches are stochastic. The result should be in the same tactical
+regime: unsafe opener selection near the Python 50k baseline and ideally at or
+below 10% on the same 11-position suite.
+
+## Stage 4.2: Pure-Restart AlphaZero-Style Loop
+
+Goal: restart the learning loop with clean Stage 4 lineage and a strong
+high-simulation search teacher.
+
+- [ ] Use the independent Stage 4 runner.
+
+```bash
+python -m dots_boxes_mcts.stage4_runner init-state
+python -m dots_boxes_mcts.stage4_runner status
+python -m dots_boxes_mcts.stage4_runner next --dry-run
+```
+
+The Stage 4 runner writes only under `runs/stage-4/` by default:
+
+- `stage4-state.json`,
+- `stage4-history.jsonl`,
+- self-play games,
+- converted training examples,
+- fresh/random or Stage 4 initialized checkpoints,
+- strategic summaries,
+- tactical probe outputs.
+
+It does not read or write the Stage 3 flywheel ledger. Iteration 1 trains from
+random weights by omitting `--init-checkpoint`; later iterations initialize from
+the promoted Stage 4 champion unless an explicit `--init-checkpoint` is passed.
+
+- [ ] Run a small Stage 4 smoke iteration before a large run.
+
+```bash
+python -m dots_boxes_mcts.stage4_runner next \
+  --games 1 \
+  --simulations 100 \
+  --train-epochs 1 \
+  --mlx-device cpu \
+  --no-tactical-probe \
+  --quiet
+```
+
+- [ ] Run the real first pure-restart iteration once the smoke passes.
+
+```bash
+python -m dots_boxes_mcts.stage4_runner next \
+  --games 25 \
+  --simulations 50000 \
+  --mlx-device gpu
+```
+
+After each Stage 4 iteration, inspect the strategic summary, the tactical probe,
+and replay a few games. Promotion should happen inside Stage 4 only:
+
+```bash
+python -m dots_boxes_mcts.stage4_runner promote \
+  --iteration 1 \
+  --reason "cleared Stage 4 tactical and checkpoint review"
+```
 
 ## Human Inspection Rhythm
 

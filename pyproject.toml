@@ -5,6 +5,7 @@ description = "Pedagogical Dots and Boxes self-play and MCTS experiments."
 requires-python = ">=3.11"
 dependencies = [
   "mlx>=0.31",
+  "numba>=0.60",
   "numpy>=2.0",
   "pytest>=8.0",
 ]
