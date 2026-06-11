@@ -891,6 +891,83 @@ because both searches are stochastic. The result should be in the same tactical
 regime: unsafe opener selection near the Python 50k baseline and ideally at or
 below 10% on the same 11-position suite.
 
+- [ ] Record the Numba UCT unsafe-opener ladder.
+
+Results from
+`runs/stage-4/numba-unsafe-opener-probe-ladder/combined/summary.json`
+on the 11-position PAPG unsafe-opener suite, with seeds `1,2,3`
+(`33` trials per budget):
+
+| simulations | unsafe selections | unsafe rate | safe/scoring rate | unsafe visit share | measured time |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 5,000 | 12 / 33 | 36.4% | 63.6% | 51.2% | 0.75s |
+| 10,000 | 9 / 33 | 27.3% | 72.7% | 48.1% | 0.73s |
+| 15,000 | 8 / 33 | 24.2% | 75.8% | 45.4% | 0.84s |
+| 20,000 | 7 / 33 | 21.2% | 78.8% | 43.5% | 0.95s |
+| 30,000 | 6 / 33 | 18.2% | 81.8% | 40.4% | 1.18s |
+| 40,000 | 3 / 33 | 9.1% | 90.9% | 37.4% | 1.42s |
+| 50,000 | 1 / 33 | 3.0% | 97.0% | 35.5% | 1.66s |
+| 100,000 | 0 / 33 | 0.0% | 100.0% | 25.3% | 2.88s |
+
+Interpretation: high-simulation random-rollout UCT does become a strong enough
+tactical teacher for this known failure mode. The unsafe-opener selection rate
+falls steadily, crosses the rough 10% target by `40,000` simulations, is nearly
+gone by `50,000`, and disappears on this run at `100,000`.
+
+- [ ] Keep the UCT and network-guided runtime stories separate.
+
+The Numba backend accelerates plain UCT MCTS: UCT selection plus random terminal
+rollouts in compact arrays. It is not the same backend as network-guided MCTS,
+which uses PUCT, policy priors, and value estimates from the MLX checkpoint.
+Network-guided search has different runtime behavior because each new leaf may
+require a neural-network evaluation. It benefits from checkpoint eval mode,
+evaluator caching, and reusing a single search tree for simulation-budget
+ladders, but the Numba UCT timing table should not be used as a direct
+network-guided runtime estimate.
+
+- [ ] Record the network-guided unsafe-opener ladder for the current champion.
+
+Results from
+`runs/stage-4/network-guided-unsafe-opener-probe-champion-iter021/reuse-full-ladder/summary.json`
+using champion checkpoint
+`runs/stage-3.6/mlx-resconv-policy-value-4x4-iter021-guided-sims250.npz`,
+seed `1`, and one trial per suite position:
+
+| simulations | unsafe selections | unsafe rate | safe/scoring rate | unsafe visit share | cumulative time |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 5,000 | 3 / 11 | 27.3% | 72.7% | 38.7% | 15.0s |
+| 10,000 | 3 / 11 | 27.3% | 72.7% | 31.4% | 26.1s |
+| 15,000 | 2 / 11 | 18.2% | 81.8% | 25.8% | 36.2s |
+| 20,000 | 2 / 11 | 18.2% | 81.8% | 22.7% | 44.8s |
+| 30,000 | 2 / 11 | 18.2% | 81.8% | 20.4% | 62.2s |
+| 40,000 | 2 / 11 | 18.2% | 81.8% | 17.5% | 77.4s |
+| 50,000 | 2 / 11 | 18.2% | 81.8% | 15.8% | 91.4s |
+| 100,000 | 1 / 11 | 9.1% | 90.9% | 10.2% | 149.8s |
+
+Low-budget detail from
+`runs/stage-4/network-guided-unsafe-opener-probe-champion-iter021/low-budget-curve/summary.json`:
+
+| simulations | unsafe selections | unsafe rate | unsafe visit share | cumulative time |
+| ---: | ---: | ---: | ---: | ---: |
+| 25 | 7 / 11 | 63.6% | 54.5% | 0.16s |
+| 50 | 6 / 11 | 54.5% | 55.6% | 0.37s |
+| 100 | 8 / 11 | 72.7% | 53.6% | 0.71s |
+| 250 | 7 / 11 | 63.6% | 51.6% | 1.53s |
+| 500 | 7 / 11 | 63.6% | 50.0% | 2.73s |
+| 1,000 | 6 / 11 | 54.5% | 49.1% | 4.84s |
+| 1,500 | 4 / 11 | 36.4% | 45.7% | 6.87s |
+| 2,000 | 3 / 11 | 27.3% | 41.8% | 8.75s |
+| 3,000 | 3 / 11 | 27.3% | 39.9% | 12.01s |
+| 4,000 | 3 / 11 | 27.3% | 39.5% | 14.89s |
+| 5,000 | 3 / 11 | 27.3% | 39.7% | 17.60s |
+
+Interpretation: the current champion improves meaningfully with more guided
+simulations, but the curve is not the same as plain UCT. In this probe, the
+guided search reaches the 10% unsafe-selection target only at `100,000`
+simulations, while the unsafe visit share keeps dropping before the selected
+move changes. For planning guided self-play runtimes, use the network-guided
+tables rather than the Numba UCT table.
+
 ## Stage 4.2: Pure-Restart AlphaZero-Style Loop
 
 Goal: restart the learning loop with clean Stage 4 lineage and a strong
