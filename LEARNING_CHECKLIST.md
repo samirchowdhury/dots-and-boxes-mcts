@@ -968,6 +968,58 @@ simulations, while the unsafe visit share keeps dropping before the selected
 move changes. For planning guided self-play runtimes, use the network-guided
 tables rather than the Numba UCT table.
 
+- [ ] Record network-guided tree reuse across real moves.
+
+Network-guided MCTS now reuses the retained search tree across real game moves
+by default in guided self-play, guided-vs-baseline evaluation, checkpoint
+matches, and guided PAPG evaluation. The compatibility escape hatch is
+`--disable-tree-reuse`. Fresh single-position calls to `NetworkGuidedMCTS.search`
+still rebuild from scratch; reusable game paths call `search_reusing_tree` and
+then advance the root with the actual played move. This matters during early
+self-play turns, where a sampled move may differ from the search-preferred move.
+
+Benchmark from `runs/stage-4/tree-reuse-benchmark/` using iter021, CPU MLX,
+one 4x4 self-play game, seed `6001`, and `2,000` simulations per decision:
+
+| mode | wall time | decisions | final score | speedup |
+| --- | ---: | ---: | ---: | ---: |
+| no tree reuse | 19.90s | 24 | 3-6 | 1.00x |
+| tree reuse | 13.70s | 24 | 2-7 | 1.45x |
+
+Interpretation: tree reuse gives a real single-game runtime win by carrying
+subtree visits forward and topping reused roots up to the configured simulation
+budget instead of spending a full fresh budget after every move. The game can
+change because the reused tree changes the effective search history; compare
+strength with match batches, not a single timed game.
+
+- [ ] Keep a short backlog of next network-guided optimizations.
+
+Try these in order, measuring a full `2,000`-simulation guided game after each:
+
+1. Game-level evaluator cache for network outputs and encoded tensors, shared
+   across every move in one game.
+2. Direct `GameState` encoding path to avoid repeated `state_snapshot` and
+   JSON-shaped conversion at every leaf.
+3. Batched leaf evaluation: collect multiple selected leaves, run one MLX batch,
+   and backpropagate their values. This is the largest likely NN-side speedup,
+   but it changes MCTS scheduling and needs careful tests.
+4. Compact array-backed guided search using the fast board representation from
+   Numba UCT, while still calling the network for policy/value estimates.
+5. Optional tactical/prior pruning, such as always preserving scoring moves and
+   pruning very-low-prior non-scoring moves. Treat this as a behavior-changing
+   experiment, not a pure runtime optimization.
+
+Regression strategy for future optimizations:
+
+- Keep `python -m pytest -q` green.
+- Preserve tests that `search()` remains fresh-root, reusable search advances to
+  an existing child, mismatched states reset safely, reused roots top up to the
+  target budget, and sampled self-play moves advance the tree.
+- For behavior-changing optimizations, rerun the unsafe-opener probe and at
+  least one checkpoint-match batch before trusting self-play data.
+- For runtime-only optimizations, benchmark both `--disable-tree-reuse` and
+  default reuse on the same checkpoint, seed, device, and simulation count.
+
 ## Stage 4.2: Pure-Restart AlphaZero-Style Loop
 
 Goal: restart the learning loop with clean Stage 4 lineage and a strong
