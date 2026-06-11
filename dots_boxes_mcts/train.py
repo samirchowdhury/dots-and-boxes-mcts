@@ -105,8 +105,48 @@ def load_mlx_checkpoint(path: Path, device: str = "cpu") -> MlxPolicyValueNetwor
         }
     }
     model.module.update(unflatten_parameter_tree(arrays))
+    set_mlx_eval_mode(model.module)
     mx.eval(model.module.parameters())
     return model
+
+
+def set_mlx_eval_mode(module: object, seen: set[int] | None = None) -> None:
+    if seen is None:
+        seen = set()
+    identity = id(module)
+    if identity in seen:
+        return
+    seen.add(identity)
+    eval_method = getattr(module, "eval", None)
+    if callable(eval_method):
+        eval_method()
+
+    if isinstance(module, ResidualPolicyValueModule):
+        children = (
+            module.stem_conv,
+            module.stem_bn,
+            *module.blocks,
+            module.policy_conv,
+            module.policy_bn,
+            module.policy_linear,
+            module.value_conv,
+            module.value_bn,
+            module.value_linear1,
+            module.value_linear2,
+        )
+    elif isinstance(module, ResidualBlock):
+        children = (module.conv1, module.bn1, module.conv2, module.bn2)
+    elif isinstance(module, (list, tuple)):
+        children = module
+    elif isinstance(module, dict):
+        children = module.values()
+    else:
+        return
+
+    for child in children:
+        if child is module:
+            continue
+        set_mlx_eval_mode(child, seen)
 
 
 def checkpoint_metadata(path: Path) -> dict[str, int]:

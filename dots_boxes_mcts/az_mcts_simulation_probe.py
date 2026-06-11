@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.game import GameState
+from dots_boxes_mcts.mcts import SearchResult
 from dots_boxes_mcts.mcts_simulation_probe import (
     classify_move,
     compact_position,
@@ -82,6 +83,7 @@ def write_guided_summary_csv(path: Path, summaries: list[dict]) -> None:
         "averageSafeOrScoringVisitShare",
         "averageUnsafeOpenerVisitShare",
         "elapsedSeconds",
+        "cumulativeElapsedSeconds",
         "cacheHits",
         "cacheMisses",
     ]
@@ -91,23 +93,15 @@ def write_guided_summary_csv(path: Path, summaries: list[dict]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf8")
 
 
-def probe_position(
+def result_record(
     position: dict,
     *,
     simulations: int,
     seed: int,
-    c_puct: float,
-    evaluator: CachedNetworkEvaluator,
+    state: GameState,
+    result: SearchResult,
 ) -> dict:
-    state = state_from_snapshot(position["state"])
     original_move = str(position.get("move", ""))
-    searcher = NetworkGuidedMCTS(
-        evaluator=evaluator,  # type: ignore[arg-type]
-        simulations=simulations,
-        c_puct=c_puct,
-        seed=seed,
-    )
-    result = searcher.search(state)
     category = classify_move(state, result.move)
     visits_by_category = {
         "safe": 0,
@@ -153,6 +147,82 @@ def probe_position(
     }
 
 
+def probe_position(
+    position: dict,
+    *,
+    simulations: int,
+    seed: int,
+    c_puct: float,
+    evaluator: CachedNetworkEvaluator,
+) -> dict:
+    state = state_from_snapshot(position["state"])
+    searcher = NetworkGuidedMCTS(
+        evaluator=evaluator,  # type: ignore[arg-type]
+        simulations=simulations,
+        c_puct=c_puct,
+        seed=seed,
+    )
+    result = searcher.search(state)
+    return result_record(
+        position,
+        simulations=simulations,
+        seed=seed,
+        state=state,
+        result=result,
+    )
+
+
+def probe_position_many(
+    position: dict,
+    *,
+    simulations: list[int],
+    seed: int,
+    c_puct: float,
+    evaluator: CachedNetworkEvaluator,
+) -> tuple[list[dict], list[dict]]:
+    state = state_from_snapshot(position["state"])
+    searcher = NetworkGuidedMCTS(
+        evaluator=evaluator,  # type: ignore[arg-type]
+        simulations=max(simulations),
+        c_puct=c_puct,
+        seed=seed,
+    )
+    records: list[dict] = []
+    timings: list[dict] = []
+    started = time.perf_counter()
+    last_time = started
+    last_hits = evaluator.hits
+    last_misses = evaluator.misses
+
+    def on_budget(budget: int, result: SearchResult) -> None:
+        nonlocal last_time, last_hits, last_misses
+        now = time.perf_counter()
+        records.append(
+            result_record(
+                position,
+                simulations=budget,
+                seed=seed,
+                state=state,
+                result=result,
+            )
+        )
+        timings.append(
+            {
+                "simulations": budget,
+                "elapsedSeconds": now - last_time,
+                "cumulativeElapsedSeconds": now - started,
+                "cacheHits": evaluator.hits - last_hits,
+                "cacheMisses": evaluator.misses - last_misses,
+            }
+        )
+        last_time = now
+        last_hits = evaluator.hits
+        last_misses = evaluator.misses
+
+    searcher.search_many(state, simulations, on_budget=on_budget)
+    return records, timings
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Probe network-guided MCTS on known unsafe opener positions."
@@ -170,9 +240,10 @@ def main() -> None:
     parser.add_argument("--position-index", type=int)
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
-    parser.add_argument("--cache-entries", type=int, default=50_000)
-    parser.add_argument("--mlx-clear-cache-every", type=int, default=500)
+    parser.add_argument("--cache-entries", type=int, default=500_000)
+    parser.add_argument("--mlx-clear-cache-every", type=int, default=0)
     parser.add_argument("--mlx-cache-limit", type=int)
+    parser.add_argument("--no-reuse-search-tree", action="store_true")
     parser.add_argument(
         "--out-dir",
         type=Path,
@@ -199,30 +270,60 @@ def main() -> None:
         clear_mlx_cache_every=args.mlx_clear_cache_every,
     )
     results: list[dict] = []
-    timings: list[dict] = []
-    for simulations in args.simulations:
-        started = time.perf_counter()
-        before_hits = evaluator.hits
-        before_misses = evaluator.misses
-        for position in positions:
-            results.append(
-                probe_position(
-                    position,
-                    simulations=simulations,
-                    seed=args.seed,
-                    c_puct=args.c_puct,
-                    evaluator=evaluator,
+    timings_by_budget: dict[int, dict] = {}
+    if args.no_reuse_search_tree:
+        for simulations in args.simulations:
+            started = time.perf_counter()
+            before_hits = evaluator.hits
+            before_misses = evaluator.misses
+            for position in positions:
+                results.append(
+                    probe_position(
+                        position,
+                        simulations=simulations,
+                        seed=args.seed,
+                        c_puct=args.c_puct,
+                        evaluator=evaluator,
+                    )
                 )
-            )
-        elapsed = time.perf_counter() - started
-        timings.append(
-            {
+            elapsed = time.perf_counter() - started
+            timings_by_budget[simulations] = {
                 "simulations": simulations,
                 "elapsedSeconds": elapsed,
+                "cumulativeElapsedSeconds": elapsed,
                 "cacheHits": evaluator.hits - before_hits,
                 "cacheMisses": evaluator.misses - before_misses,
             }
-        )
+    else:
+        for position in positions:
+            position_results, position_timings = probe_position_many(
+                position,
+                simulations=args.simulations,
+                seed=args.seed,
+                c_puct=args.c_puct,
+                evaluator=evaluator,
+            )
+            results.extend(position_results)
+            for timing in position_timings:
+                budget_timing = timings_by_budget.setdefault(
+                    timing["simulations"],
+                    {
+                        "simulations": timing["simulations"],
+                        "elapsedSeconds": 0.0,
+                        "cumulativeElapsedSeconds": 0.0,
+                        "cacheHits": 0,
+                        "cacheMisses": 0,
+                    },
+                )
+                budget_timing["elapsedSeconds"] += timing["elapsedSeconds"]
+                budget_timing["cumulativeElapsedSeconds"] += timing["cumulativeElapsedSeconds"]
+                budget_timing["cacheHits"] += timing["cacheHits"]
+                budget_timing["cacheMisses"] += timing["cacheMisses"]
+
+    timings = [
+        timings_by_budget[simulations]
+        for simulations in sorted(timings_by_budget)
+    ]
 
     summaries = summarize_probe(results, positions=len(positions), seeds=[args.seed])
     timing_by_budget = {item["simulations"]: item for item in timings}
@@ -243,6 +344,7 @@ def main() -> None:
         "cacheEntries": args.cache_entries,
         "mlxClearCacheEvery": args.mlx_clear_cache_every,
         "mlxCacheLimit": args.mlx_cache_limit,
+        "reuseSearchTree": not args.no_reuse_search_tree,
         "summary": summaries,
     }
 

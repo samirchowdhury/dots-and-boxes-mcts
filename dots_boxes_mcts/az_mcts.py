@@ -6,6 +6,7 @@ import math
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
@@ -82,34 +83,74 @@ class NetworkGuidedMCTS:
         self._expand(root)
         self._add_root_noise(root)
         for _ in range(self.simulations):
-            node = root
-            path: list[tuple[AZNode, AZNode]] = []
-            while node.expanded() and not node.state.terminal:
-                child = self._select_child(node)
-                path.append((node, child))
-                node = child
+            self._run_simulation(root)
 
-            if node.state.terminal:
-                leaf_player = node.state.current_player
-                leaf_value = terminal_value(node.state, leaf_player)
-            else:
-                leaf_player = node.state.current_player
-                leaf_value = self._expand(node)
+        return self._search_result(root, self.simulations)
 
-            for parent, child in path:
-                child.visits += 1
-                child.value_sum += leaf_value if parent.state.current_player == leaf_player else -leaf_value
-            root.visits += 1
+    def search_many(
+        self,
+        state: GameState,
+        budgets: list[int],
+        on_budget: Callable[[int, SearchResult], None] | None = None,
+    ) -> list[SearchResult]:
+        if state.terminal:
+            raise ValueError("Cannot search from a terminal state.")
+        if not budgets:
+            return []
+        normalized_budgets = sorted(set(budgets))
+        if normalized_budgets[0] < 1:
+            raise ValueError("budgets must be at least 1")
 
-        return SearchResult(
-            move=self._best_root_move(root),
-            simulations=self.simulations,
-            root_player=state.current_player,
-            stats=self._root_stats(root),
-        )
+        root = AZNode(state=state)
+        self._expand(root)
+        self._add_root_noise(root)
+        results_by_budget: dict[int, SearchResult] = {}
+        next_budget_index = 0
+        for simulation in range(1, normalized_budgets[-1] + 1):
+            self._run_simulation(root)
+            while (
+                next_budget_index < len(normalized_budgets)
+                and simulation == normalized_budgets[next_budget_index]
+            ):
+                budget = normalized_budgets[next_budget_index]
+                result = self._search_result(root, budget)
+                results_by_budget[budget] = result
+                if on_budget is not None:
+                    on_budget(budget, result)
+                next_budget_index += 1
+
+        return [results_by_budget[budget] for budget in budgets]
 
     def choose_move(self, state: GameState) -> str:
         return self.search(state).move
+
+    def _run_simulation(self, root: AZNode) -> None:
+        node = root
+        path: list[tuple[AZNode, AZNode]] = []
+        while node.expanded() and not node.state.terminal:
+            child = self._select_child(node)
+            path.append((node, child))
+            node = child
+
+        if node.state.terminal:
+            leaf_player = node.state.current_player
+            leaf_value = terminal_value(node.state, leaf_player)
+        else:
+            leaf_player = node.state.current_player
+            leaf_value = self._expand(node)
+
+        for parent, child in path:
+            child.visits += 1
+            child.value_sum += leaf_value if parent.state.current_player == leaf_player else -leaf_value
+        root.visits += 1
+
+    def _search_result(self, root: AZNode, simulations: int) -> SearchResult:
+        return SearchResult(
+            move=self._best_root_move(root),
+            simulations=simulations,
+            root_player=root.state.current_player,
+            stats=self._root_stats(root),
+        )
 
     def _expand(self, node: AZNode) -> float:
         priors, value = self.evaluator.evaluate(node.state)

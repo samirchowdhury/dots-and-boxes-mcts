@@ -5,8 +5,34 @@ import pytest
 from dots_boxes_mcts.az_guided_self_play import play_guided_self_play_game
 from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.evaluate import play_mcts_vs_random_game
-from dots_boxes_mcts.game import legal_moves, new_game
+from dots_boxes_mcts.game import GameState, legal_moves, new_game
 from dots_boxes_mcts.train import examples_from_records, overfit_examples
+
+
+class UniformEvaluator:
+    def evaluate(self, state: GameState) -> tuple[dict[str, float], float]:
+        moves = legal_moves(state)
+        return {move: 1.0 / len(moves) for move in moves}, 0.0
+
+
+def stats_signature(result) -> list[tuple[str, int, float]]:
+    return [
+        (stat.move, stat.visits, round(stat.mean_value, 8))
+        for stat in result.stats
+    ]
+
+
+def test_network_guided_mcts_can_reuse_tree_for_budget_ladder() -> None:
+    state = new_game(rows=3, cols=3)
+    searcher = NetworkGuidedMCTS(evaluator=UniformEvaluator(), simulations=5, seed=1)
+
+    partial, full = searcher.search_many(state, [2, 5])
+    fresh = NetworkGuidedMCTS(evaluator=UniformEvaluator(), simulations=5, seed=1).search(state)
+
+    assert partial.simulations == 2
+    assert full.simulations == 5
+    assert full.move == fresh.move
+    assert stats_signature(full) == stats_signature(fresh)
 
 
 def test_network_guided_mcts_returns_legal_move_from_checkpoint(tmp_path) -> None:
