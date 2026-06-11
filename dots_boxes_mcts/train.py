@@ -111,15 +111,25 @@ def load_mlx_checkpoint(path: Path, device: str = "cpu") -> MlxPolicyValueNetwor
 
 
 def set_mlx_eval_mode(module: object, seen: set[int] | None = None) -> None:
+    set_mlx_mode(module, mode="eval", seen=seen)
+
+
+def set_mlx_train_mode(module: object, seen: set[int] | None = None) -> None:
+    set_mlx_mode(module, mode="train", seen=seen)
+
+
+def set_mlx_mode(module: object, *, mode: str, seen: set[int] | None = None) -> None:
+    if mode not in {"eval", "train"}:
+        raise ValueError("mode must be 'eval' or 'train'")
     if seen is None:
         seen = set()
     identity = id(module)
     if identity in seen:
         return
     seen.add(identity)
-    eval_method = getattr(module, "eval", None)
-    if callable(eval_method):
-        eval_method()
+    mode_method = getattr(module, mode, None)
+    if callable(mode_method):
+        mode_method()
 
     if isinstance(module, ResidualPolicyValueModule):
         children = (
@@ -146,7 +156,7 @@ def set_mlx_eval_mode(module: object, seen: set[int] | None = None) -> None:
     for child in children:
         if child is module:
             continue
-        set_mlx_eval_mode(child, seen)
+        set_mlx_mode(child, mode=mode, seen=seen)
 
 
 def checkpoint_metadata(path: Path) -> dict[str, int]:
@@ -569,6 +579,7 @@ def overfit_examples(
             value_weight=value_weight,
         )
         if epoch == 1 or epoch == epochs or epoch % diagnostics_every == 0:
+            set_mlx_eval_mode(model.module)
             policy, value = model.forward(mlx_x, mlx_legal_mask)
             mx.eval(policy, value)
             diagnostics.append(
@@ -704,6 +715,7 @@ def train_model_step(
 ) -> None:
     mx = require_mlx(device=model.device)
     nn = require_mlx_nn(device=model.device)
+    set_mlx_train_mode(model.module)
 
     def loss_fn(module, batch_x, batch_policy_target, batch_value_target, batch_legal_mask):
         policy, value = module(batch_x, batch_legal_mask)
@@ -755,6 +767,7 @@ def diagnostics_for_arrays(
     epoch: int,
 ) -> OverfitDiagnostics:
     mx = require_mlx(device=model.device)
+    set_mlx_eval_mode(model.module)
     policy, value = model.forward(mx.array(x), mx.array(legal_mask))
     mx.eval(policy, value)
     return overfit_diagnostics(
