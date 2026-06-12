@@ -7,6 +7,7 @@ dependencies = [
   "mlx>=0.31",
   "numba>=0.60",
   "numpy>=2.0",
+  "playwright>=1.60",
   "pytest>=8.0",
 ]
 

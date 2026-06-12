@@ -5,11 +5,10 @@ import json
 import re
 import time
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
-from dots_boxes_mcts.evaluate import summarize_records
+from dots_boxes_mcts.az_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.external_games import edge_to_papg_index, external_game_record
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
@@ -27,6 +26,7 @@ PAPG_SIZE_VALUES = {
     (5, 4): "2",
     (6, 4): "3",
 }
+DEFAULT_EVALUATOR_CACHE_ENTRIES = 500_000
 
 
 def play_mcts_vs_papg_game(
@@ -38,6 +38,7 @@ def play_mcts_vs_papg_game(
     request_delay: float = 5.0,
     timeout: float = 30.0,
     debug_dir: Path | None = None,
+    our_player: int = 0,
 ) -> dict:
     mcts = UCTMCTS(simulations=simulations, seed=seed)
     return play_searcher_vs_papg_game(
@@ -51,6 +52,7 @@ def play_mcts_vs_papg_game(
         timeout=timeout,
         debug_dir=debug_dir,
         notes=f"Live Papg evaluation with {simulations} UCT simulations per move.",
+        our_player=our_player,
     )
 
 
@@ -67,8 +69,15 @@ def play_network_guided_mcts_vs_papg_game(
     debug_dir: Path | None = None,
     device: str = "cpu",
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
+    our_player: int = 0,
 ) -> dict:
-    evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    network_evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    evaluator = (
+        CachedNetworkEvaluator(network_evaluator, max_entries=evaluator_cache_entries)
+        if evaluator_cache_entries > 0
+        else network_evaluator
+    )
     searcher = NetworkGuidedMCTS(
         evaluator=evaluator,
         simulations=simulations,
@@ -94,8 +103,10 @@ def play_network_guided_mcts_vs_papg_game(
             "cPuct": c_puct,
             "mlxDevice": device,
             "reuseTree": reuse_tree,
+            "evaluatorCacheEntries": evaluator_cache_entries,
         },
         reuse_tree=reuse_tree,
+        our_player=our_player,
     )
 
 
@@ -113,22 +124,44 @@ def play_searcher_vs_papg_game(
     notes: str,
     record_fields: dict | None = None,
     reuse_tree: bool = True,
+    our_player: int = 0,
 ) -> dict:
+    if our_player not in {0, 1}:
+        raise ValueError("our_player must be 0 or 1")
+    papg_player = 1 - our_player
     client = PapgClient(request_delay=request_delay, timeout=timeout, debug_dir=debug_dir)
-    page = client.new_game(rows=rows, cols=cols)
+    page = client.new_game(rows=rows, cols=cols, our_player=our_player)
     state = new_game(rows=rows, cols=cols)
     moves: list[str] = []
     decisions: list[dict] = []
 
     while not state.terminal:
-        synced_moves = sync_papg_moves(state, page)
-        for papg_move in synced_moves:
-            moves.append(papg_move)
-            next_state = apply_move(state, papg_move)
-            advance_searcher_tree(searcher, papg_move, next_state, reuse_tree=reuse_tree)
-            state = next_state
+        papg_polls = 0
+        while state.current_player == papg_player and not state.terminal:
+            synced_moves = sync_papg_moves(state, page, papg_player=papg_player)
+            if synced_moves:
+                for papg_move in synced_moves:
+                    moves.append(papg_move)
+                    next_state = apply_move(state, papg_move)
+                    advance_searcher_tree(searcher, papg_move, next_state, reuse_tree=reuse_tree)
+                    state = next_state
+                continue
+
+            if papg_polls >= 10:
+                raise RuntimeError(
+                    "Papg did not produce a reply while it was Papg's turn. "
+                    "Refusing to let the local searcher play for Papg."
+                )
+            page = client.poll_reply(page)
+            papg_polls += 1
+
         if state.terminal:
             break
+        if state.current_player != our_player:
+            raise RuntimeError(
+                f"Expected local bot player {our_player} to move, "
+                f"but current player is {state.current_player}."
+            )
 
         result = (
             searcher.search_reusing_tree(state)
@@ -151,12 +184,6 @@ def play_searcher_vs_papg_game(
         advance_searcher_tree(searcher, move, next_state, reuse_tree=reuse_tree)
         state = next_state
 
-        for papg_move in sync_papg_moves(state, page):
-            moves.append(papg_move)
-            next_state = apply_move(state, papg_move)
-            advance_searcher_tree(searcher, papg_move, next_state, reuse_tree=reuse_tree)
-            state = next_state
-
     record = external_game_record(
         source="papg",
         opponent="papg",
@@ -164,7 +191,7 @@ def play_searcher_vs_papg_game(
         rows=rows,
         cols=cols,
         moves=moves,
-        our_player=0,
+        our_player=our_player,
         notes=notes,
     )
     record["seed"] = seed
@@ -184,13 +211,13 @@ def checkpoint_bot_name(*, checkpoint: Path, simulations: int) -> str:
     return f"network_guided_mcts_{simulations}_{checkpoint.stem}"
 
 
-def sync_papg_moves(state: GameState, page: PapgPage) -> list[str]:
+def sync_papg_moves(state: GameState, page: PapgPage, *, papg_player: int = 1) -> list[str]:
     missing_papg_moves = [
         edge
         for edge in page.drawn_edges
         if edge not in state.edges
     ]
-    return infer_papg_reply(state, missing_papg_moves)
+    return infer_papg_reply(state, missing_papg_moves, papg_player=papg_player)
 
 
 def generate_mcts_vs_papg_games(
@@ -203,9 +230,12 @@ def generate_mcts_vs_papg_games(
     request_delay: float = 5.0,
     timeout: float = 30.0,
     debug_dir: Path | None = None,
+    our_player: int = 0,
+    alternate_players: bool = False,
 ) -> list[dict]:
     records: list[dict] = []
     for game_index in range(games):
+        game_our_player = alternating_our_player(game_index) if alternate_players else our_player
         record = play_mcts_vs_papg_game(
             rows=rows,
             cols=cols,
@@ -214,6 +244,7 @@ def generate_mcts_vs_papg_games(
             request_delay=request_delay,
             timeout=timeout,
             debug_dir=debug_dir,
+            our_player=game_our_player,
         )
         record["gameIndex"] = game_index
         records.append(record)
@@ -234,11 +265,20 @@ def generate_network_guided_mcts_vs_papg_games(
     debug_dir: Path | None = None,
     device: str = "cpu",
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
+    our_player: int = 0,
+    alternate_players: bool = False,
 ) -> list[dict]:
     records: list[dict] = []
-    evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    network_evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
     for game_index in range(games):
         game_seed = seed + game_index
+        game_our_player = alternating_our_player(game_index) if alternate_players else our_player
+        evaluator = (
+            CachedNetworkEvaluator(network_evaluator, max_entries=evaluator_cache_entries)
+            if evaluator_cache_entries > 0
+            else network_evaluator
+        )
         searcher = NetworkGuidedMCTS(
             evaluator=evaluator,
             simulations=simulations,
@@ -264,12 +304,71 @@ def generate_network_guided_mcts_vs_papg_games(
                 "cPuct": c_puct,
                 "mlxDevice": device,
                 "reuseTree": reuse_tree,
+                "evaluatorCacheEntries": evaluator_cache_entries,
             },
             reuse_tree=reuse_tree,
+            our_player=game_our_player,
         )
         record["gameIndex"] = game_index
         records.append(record)
     return records
+
+
+def alternating_our_player(game_index: int) -> int:
+    return game_index % 2
+
+
+def summarize_papg_records(records: list[dict]) -> dict:
+    summary = summarize_papg_record_subset(records)
+    summary["byOurPlayer"] = {}
+    for player in (0, 1):
+        subset = [record for record in records if int(record.get("ourPlayer", 0)) == player]
+        if subset:
+            summary["byOurPlayer"][str(player)] = summarize_papg_record_subset(subset)
+    return summary
+
+
+def summarize_papg_record_subset(records: list[dict]) -> dict:
+    if not records:
+        return {
+            "games": 0,
+            "wins": 0,
+            "draws": 0,
+            "losses": 0,
+            "winRate": 0.0,
+            "averageScoreMargin": 0.0,
+            "strategic": summarize_records_by_perspective([]),
+        }
+    margins = [
+        record["finalScores"][int(record.get("ourPlayer", 0))]
+        - record["finalScores"][1 - int(record.get("ourPlayer", 0))]
+        for record in records
+    ]
+    wins = sum(
+        1
+        for record in records
+        if record["winner"] == int(record.get("ourPlayer", 0))
+    )
+    draws = sum(1 for record in records if record["winner"] == "draw")
+    losses = len(records) - wins - draws
+    return {
+        "games": len(records),
+        "wins": wins,
+        "draws": draws,
+        "losses": losses,
+        "winRate": wins / len(records),
+        "averageScoreMargin": sum(margins) / len(margins),
+        "strategic": summarize_records_by_perspective(records),
+    }
+
+
+def summarize_records_by_perspective(records: list[dict]) -> dict:
+    from dots_boxes_mcts.strategic_eval import summarize_strategic_records
+
+    return summarize_strategic_records(
+        records,
+        perspective_player=lambda record: int(record.get("ourPlayer", 0)),
+    )
 
 
 def infer_papg_reply(
@@ -322,9 +421,22 @@ class PapgClient:
         self.debug_dir = debug_dir
         self.request_count = 0
 
-    def new_game(self, *, rows: int, cols: int) -> PapgPage:
+    def new_game(self, *, rows: int, cols: int, our_player: int = 0) -> PapgPage:
         if (rows, cols) not in PAPG_SIZE_VALUES:
             raise ValueError(f"Papg board size is not configured for {rows}x{cols} dots.")
+        if our_player not in {0, 1}:
+            raise ValueError("our_player must be 0 or 1")
+        if our_player == 1:
+            data = urlencode(
+                {
+                    "YOUR-NAME": "MCTS",
+                    "SIZE": PAPG_SIZE_VALUES[(rows, cols)],
+                    "HUMAN": "2",
+                    "PLAY": "New Game",
+                }
+            ).encode()
+            html = self._open(Request(PAPG_NEW_GAME_URL, data=data, headers=PAPG_HEADERS))
+            return parse_papg_page(html, rows=rows, cols=cols)
 
         return initial_papg_page(rows=rows, cols=cols)
 
@@ -338,17 +450,23 @@ class PapgClient:
             ) from error
 
         url = urljoin(PAPG_BASE_URL, href)
-        html = self._open(Request(url, headers=PAPG_HEADERS))
-        parsed_page = parse_papg_page(html, rows=page.rows, cols=page.cols)
-
         poll_url = papg_thinking_url(url)
+        html = self._open(Request(url, headers=PAPG_HEADERS))
+        parsed_page = parse_papg_page(html, rows=page.rows, cols=page.cols, poll_url=poll_url)
+
         attempts = 0
         while is_thinking_page(html) and not parsed_page.move_links and attempts < 5:
             html = self._open(Request(poll_url, headers=PAPG_HEADERS))
-            parsed_page = parse_papg_page(html, rows=page.rows, cols=page.cols)
+            parsed_page = parse_papg_page(html, rows=page.rows, cols=page.cols, poll_url=poll_url)
             attempts += 1
 
         return parsed_page
+
+    def poll_reply(self, page: PapgPage) -> PapgPage:
+        if page.poll_url is None:
+            raise RuntimeError("Cannot poll Papg reply before submitting a local move.")
+        html = self._open(Request(page.poll_url, headers=PAPG_HEADERS))
+        return parse_papg_page(html, rows=page.rows, cols=page.cols, poll_url=page.poll_url)
 
     def _open(self, request: Request | str) -> str:
         elapsed = time.monotonic() - self.last_request_at
@@ -378,12 +496,14 @@ class PapgPage:
         move_links: dict[int, str],
         edge_owners: dict[str, int],
         drawn_edges: set[str],
+        poll_url: str | None = None,
     ) -> None:
         self.rows = rows
         self.cols = cols
         self.move_links = move_links
         self.edge_owners = edge_owners
         self.drawn_edges = drawn_edges
+        self.poll_url = poll_url
 
 
 def initial_papg_page(*, rows: int, cols: int) -> PapgPage:
@@ -408,7 +528,7 @@ def initial_papg_state_string(*, rows: int, cols: int) -> str:
     return "".join(chars)
 
 
-def parse_papg_page(html: str, *, rows: int, cols: int) -> PapgPage:
+def parse_papg_page(html: str, *, rows: int, cols: int, poll_url: str | None = None) -> PapgPage:
     move_links = parse_move_links(html)
     edge_owners = parse_edge_owners(html, rows=rows, cols=cols)
     return PapgPage(
@@ -417,6 +537,7 @@ def parse_papg_page(html: str, *, rows: int, cols: int) -> PapgPage:
         move_links=move_links,
         edge_owners=edge_owners,
         drawn_edges=parse_drawn_edges(move_links=move_links, edge_owners=edge_owners, rows=rows, cols=cols),
+        poll_url=poll_url,
     )
 
 
@@ -425,6 +546,11 @@ def is_thinking_page(html: str) -> bool:
 
 
 def papg_thinking_url(move_url: str) -> str:
+    parts = urlsplit(move_url)
+    query_parts = parts.query.split("+")
+    if len(query_parts) > 1:
+        query_parts[1] = "2"
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "+".join(query_parts), parts.fragment))
     return move_url.replace("/dab?.+1+", "/dab?.+2+", 1)
 
 
@@ -435,8 +561,11 @@ def parse_drawn_edges(
     rows: int,
     cols: int,
 ) -> set[str]:
-    if not move_links:
+    if edge_owners:
         return set(edge_owners)
+
+    if not move_links:
+        return set()
 
     legal_indexes = set(move_links)
     return {
@@ -448,7 +577,8 @@ def parse_drawn_edges(
 
 def parse_move_links(html: str) -> dict[int, str]:
     links: dict[int, str] = {}
-    for href, raw_index in re.findall(r'href="?([^"\s>]*/dab\?\.\+1\+1\+0\+0\+(\d+)\+[^"\s>]*)"?', html):
+    pattern = r'href="?([^"\s>]*/dab\?[^"\s>]*?\+\d+\+\d+\+\d+\+\d+\+(\d+)\+[^"\s>]*)"?'
+    for href, raw_index in re.findall(pattern, html):
         links[int(raw_index)] = href
     return links
 
@@ -491,6 +621,13 @@ def main() -> None:
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--disable-tree-reuse", action="store_true")
+    parser.add_argument("--evaluator-cache-entries", type=int, default=DEFAULT_EVALUATOR_CACHE_ENTRIES)
+    parser.add_argument("--our-player", type=int, choices=[0, 1], default=0)
+    parser.add_argument(
+        "--alternate-players",
+        action="store_true",
+        help="Alternate local bot between player 0 and player 1. Requires an even --games value.",
+    )
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--request-delay", type=float, default=5.0)
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -500,6 +637,10 @@ def main() -> None:
 
     if args.games < 1:
         raise SystemExit("--games must be at least 1")
+    if args.alternate_players and args.games % 2 != 0:
+        raise SystemExit("--alternate-players requires an even --games value")
+    if args.evaluator_cache_entries < 0:
+        raise SystemExit("--evaluator-cache-entries must be non-negative")
 
     if args.checkpoint is None:
         records = generate_mcts_vs_papg_games(
@@ -511,6 +652,8 @@ def main() -> None:
             request_delay=args.request_delay,
             timeout=args.timeout,
             debug_dir=args.debug_dir,
+            our_player=args.our_player,
+            alternate_players=args.alternate_players,
         )
     else:
         records = generate_network_guided_mcts_vs_papg_games(
@@ -526,9 +669,12 @@ def main() -> None:
             debug_dir=args.debug_dir,
             device=args.mlx_device,
             reuse_tree=not args.disable_tree_reuse,
+            evaluator_cache_entries=args.evaluator_cache_entries,
+            our_player=args.our_player,
+            alternate_players=args.alternate_players,
         )
     write_jsonl(records, args.out)
-    print(json.dumps(summarize_records(records, mcts_player=0), sort_keys=True))
+    print(json.dumps(summarize_papg_records(records), sort_keys=True))
     print(f"Wrote {len(records)} games to {args.out}")
 
 
