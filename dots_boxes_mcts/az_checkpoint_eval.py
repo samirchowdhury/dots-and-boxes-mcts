@@ -5,12 +5,14 @@ import json
 import random
 from pathlib import Path
 
-from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.az_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.evaluate import summarize_records
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 from dots_boxes_mcts.mcts import result_payload
 from dots_boxes_mcts.self_play import write_jsonl
 from dots_boxes_mcts.strategic_eval import summarize_strategic_records
+
+DEFAULT_EVALUATOR_CACHE_ENTRIES = 500_000
 
 
 def play_checkpoint_match_game(
@@ -25,6 +27,7 @@ def play_checkpoint_match_game(
     opening_random_plies: int = 2,
     device: str = "cpu",
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> dict:
     if candidate_player not in {0, 1}:
         raise ValueError("candidate_player must be 0 or 1")
@@ -32,9 +35,17 @@ def play_checkpoint_match_game(
         raise ValueError("opening_random_plies must be non-negative")
 
     rng = random.Random(seed)
-    evaluators = {
+    network_evaluators = {
         candidate_player: NetworkEvaluator(checkpoint=candidate_checkpoint, device=device),
         1 - candidate_player: NetworkEvaluator(checkpoint=baseline_checkpoint, device=device),
+    }
+    evaluators = {
+        player: (
+            CachedNetworkEvaluator(evaluator, max_entries=evaluator_cache_entries)
+            if evaluator_cache_entries > 0
+            else evaluator
+        )
+        for player, evaluator in network_evaluators.items()
     }
     searchers = {
         player: NetworkGuidedMCTS(
@@ -96,6 +107,7 @@ def play_checkpoint_match_game(
         opening_random_plies=opening_random_plies,
         opening_moves=opening_moves,
         reuse_tree=reuse_tree,
+        evaluator_cache_entries=evaluator_cache_entries,
         decisions=decisions,
     )
 
@@ -113,6 +125,7 @@ def generate_checkpoint_match_games(
     device: str = "cpu",
     alternate_colors: bool = True,
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> list[dict]:
     records: list[dict] = []
     for game_index in range(games):
@@ -129,6 +142,7 @@ def generate_checkpoint_match_games(
             opening_random_plies=opening_random_plies,
             device=device,
             reuse_tree=reuse_tree,
+            evaluator_cache_entries=evaluator_cache_entries,
         )
         record["gameIndex"] = game_index
         records.append(record)
@@ -181,6 +195,7 @@ def checkpoint_match_record(
     opening_random_plies: int = 0,
     opening_moves: list[str] | None = None,
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> dict:
     baseline_player = 1 - candidate_player
     return {
@@ -198,6 +213,7 @@ def checkpoint_match_record(
         "simulations": simulations,
         "cPuct": c_puct,
         "reuseTree": reuse_tree,
+        "evaluatorCacheEntries": evaluator_cache_entries,
         "openingRandomPlies": opening_random_plies,
         "openingMoves": opening_moves or [],
         "moves": moves,
@@ -225,11 +241,14 @@ def main() -> None:
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--no-alternate-colors", action="store_true")
     parser.add_argument("--disable-tree-reuse", action="store_true")
+    parser.add_argument("--evaluator-cache-entries", type=int, default=DEFAULT_EVALUATOR_CACHE_ENTRIES)
     parser.add_argument("--out", type=Path, default=Path("runs/stage-3.6/checkpoint-match.jsonl"))
     args = parser.parse_args()
 
     if args.games < 1:
         raise SystemExit("--games must be at least 1")
+    if args.evaluator_cache_entries < 0:
+        raise SystemExit("--evaluator-cache-entries must be non-negative")
 
     records = generate_checkpoint_match_games(
         candidate_checkpoint=args.candidate,
@@ -244,6 +263,7 @@ def main() -> None:
         device=args.mlx_device,
         alternate_colors=not args.no_alternate_colors,
         reuse_tree=not args.disable_tree_reuse,
+        evaluator_cache_entries=args.evaluator_cache_entries,
     )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_checkpoint_match_records(records), sort_keys=True))

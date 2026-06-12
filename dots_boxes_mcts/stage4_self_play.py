@@ -14,7 +14,7 @@ from dots_boxes_mcts.mcts import result_payload
 from dots_boxes_mcts.self_play import write_jsonl
 
 ProgressLogger = Callable[[str], None]
-DEFAULT_STAGE4_SIMULATIONS = 50_000
+DEFAULT_STAGE4_SIMULATIONS = 2_000
 
 
 def play_stage4_self_play_game(

@@ -5,11 +5,13 @@ import json
 import random
 from pathlib import Path
 
-from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.az_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.evaluate import summarize_records
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
 from dots_boxes_mcts.self_play import write_jsonl
+
+DEFAULT_EVALUATOR_CACHE_ENTRIES = 500_000
 
 
 def play_guided_vs_baseline_game(
@@ -24,6 +26,7 @@ def play_guided_vs_baseline_game(
     c_puct: float = 1.5,
     device: str = "cpu",
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> dict:
     if guided_player not in {0, 1}:
         raise ValueError("guided_player must be 0 or 1")
@@ -31,7 +34,12 @@ def play_guided_vs_baseline_game(
         raise ValueError("opponent must be 'random' or 'plain_mcts'")
 
     rng = random.Random(seed)
-    evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    network_evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    evaluator = (
+        CachedNetworkEvaluator(network_evaluator, max_entries=evaluator_cache_entries)
+        if evaluator_cache_entries > 0
+        else network_evaluator
+    )
     guided = NetworkGuidedMCTS(evaluator=evaluator, simulations=simulations, c_puct=c_puct)
     plain = UCTMCTS(simulations=opponent_simulations, seed=seed) if opponent == "plain_mcts" else None
     state = new_game(rows=rows, cols=cols)
@@ -73,6 +81,7 @@ def play_guided_vs_baseline_game(
         opponent_simulations=opponent_simulations,
         c_puct=c_puct,
         reuse_tree=reuse_tree,
+        evaluator_cache_entries=evaluator_cache_entries,
         decisions=decisions,
     )
 
@@ -90,6 +99,7 @@ def generate_guided_vs_baseline_games(
     c_puct: float = 1.5,
     device: str = "cpu",
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> list[dict]:
     records: list[dict] = []
     for game_index in range(games):
@@ -105,6 +115,7 @@ def generate_guided_vs_baseline_games(
             c_puct=c_puct,
             device=device,
             reuse_tree=reuse_tree,
+            evaluator_cache_entries=evaluator_cache_entries,
         )
         record["gameIndex"] = game_index
         records.append(record)
@@ -122,6 +133,7 @@ def guided_game_record(
     opponent_simulations: int,
     c_puct: float,
     reuse_tree: bool,
+    evaluator_cache_entries: int,
     decisions: list[dict],
 ) -> dict:
     opponent_player = 1 if guided_player == 0 else 0
@@ -141,6 +153,7 @@ def guided_game_record(
         "opponentSimulations": opponent_simulations,
         "cPuct": c_puct,
         "reuseTree": reuse_tree,
+        "evaluatorCacheEntries": evaluator_cache_entries,
         "moves": moves,
         "decisions": decisions,
         "finalScores": [state.scores[0], state.scores[1]],
@@ -164,8 +177,11 @@ def main() -> None:
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--disable-tree-reuse", action="store_true")
+    parser.add_argument("--evaluator-cache-entries", type=int, default=DEFAULT_EVALUATOR_CACHE_ENTRIES)
     parser.add_argument("--out", type=Path, default=Path("runs/stage-3.5/eval.jsonl"))
     args = parser.parse_args()
+    if args.evaluator_cache_entries < 0:
+        raise SystemExit("--evaluator-cache-entries must be non-negative")
 
     records = generate_guided_vs_baseline_games(
         checkpoint=args.checkpoint,
@@ -180,6 +196,7 @@ def main() -> None:
         c_puct=args.c_puct,
         device=args.mlx_device,
         reuse_tree=not args.disable_tree_reuse,
+        evaluator_cache_entries=args.evaluator_cache_entries,
     )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_records(records, mcts_player=args.guided_player), sort_keys=True))

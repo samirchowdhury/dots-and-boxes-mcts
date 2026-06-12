@@ -105,6 +105,7 @@ def test_run_metadata_records_full_parameter_set() -> None:
         device="gpu",
         debug=True,
         reuse_tree=True,
+        evaluator_cache_entries=50000,
     )
 
     assert metadata["output"] == "runs/stage-3.6/guided-self-play-4x4-games100-sims250.jsonl"
@@ -120,6 +121,7 @@ def test_run_metadata_records_full_parameter_set() -> None:
     assert metadata["mlxDevice"] == "gpu"
     assert metadata["debug"] is True
     assert metadata["reuseTree"] is True
+    assert metadata["evaluatorCacheEntries"] == 50000
 
 
 def test_select_self_play_move_samples_from_visits_during_temperature_window() -> None:

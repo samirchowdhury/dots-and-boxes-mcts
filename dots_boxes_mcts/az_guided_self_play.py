@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.az_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.game import GameState, apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import SearchResult, result_payload
 from dots_boxes_mcts.self_play import write_jsonl
@@ -16,6 +16,7 @@ from dots_boxes_mcts.self_play import write_jsonl
 ProgressLogger = Callable[[str], None]
 DEFAULT_TEMPERATURE_MOVES = 8
 DEFAULT_SAMPLING_TEMPERATURE = 1.0
+DEFAULT_EVALUATOR_CACHE_ENTRIES = 500_000
 
 
 def play_guided_self_play_game(
@@ -31,6 +32,7 @@ def play_guided_self_play_game(
     sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
     progress_logger: ProgressLogger | None = None,
     game_index: int | None = None,
     total_games: int | None = None,
@@ -41,7 +43,12 @@ def play_guided_self_play_game(
         raise ValueError("sampling_temperature must be positive")
 
     move_rng = random.Random(seed)
-    evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    network_evaluator = NetworkEvaluator(checkpoint=checkpoint, device=device)
+    evaluator = (
+        CachedNetworkEvaluator(network_evaluator, max_entries=evaluator_cache_entries)
+        if evaluator_cache_entries > 0
+        else network_evaluator
+    )
     searcher = NetworkGuidedMCTS(
         evaluator=evaluator,
         simulations=simulations,
@@ -146,6 +153,7 @@ def generate_guided_self_play_games(
     sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
     reuse_tree: bool = True,
+    evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
     progress_logger: ProgressLogger | None = None,
 ) -> list[dict]:
     records: list[dict] = []
@@ -163,6 +171,7 @@ def generate_guided_self_play_games(
             sampling_temperature=sampling_temperature,
             device=device,
             reuse_tree=reuse_tree,
+            evaluator_cache_entries=evaluator_cache_entries,
             progress_logger=progress_logger,
             game_index=game_index,
             total_games=games,
@@ -285,6 +294,7 @@ def run_metadata(
     device: str,
     debug: bool,
     reuse_tree: bool,
+    evaluator_cache_entries: int,
 ) -> dict:
     return {
         "output": str(out_path),
@@ -303,6 +313,7 @@ def run_metadata(
         "mlxDevice": device,
         "debug": debug,
         "reuseTree": reuse_tree,
+        "evaluatorCacheEntries": evaluator_cache_entries,
     }
 
 
@@ -405,6 +416,12 @@ def main() -> None:
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--disable-tree-reuse", action="store_true")
     parser.add_argument(
+        "--evaluator-cache-entries",
+        type=int,
+        default=DEFAULT_EVALUATOR_CACHE_ENTRIES,
+        help="Maximum per-game network evaluation cache entries. Use 0 to disable.",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Print per-turn search timing and per-game completion progress to stderr.",
@@ -429,6 +446,8 @@ def main() -> None:
         raise SystemExit("--temperature-moves must be non-negative")
     if args.sampling_temperature <= 0:
         raise SystemExit("--sampling-temperature must be positive")
+    if args.evaluator_cache_entries < 0:
+        raise SystemExit("--evaluator-cache-entries must be non-negative")
 
     out_path = args.out or default_output_path(
         rows=args.rows,
@@ -459,6 +478,7 @@ def main() -> None:
         device=args.mlx_device,
         debug=args.debug,
         reuse_tree=not args.disable_tree_reuse,
+        evaluator_cache_entries=args.evaluator_cache_entries,
     )
     records = generate_guided_self_play_games(
         checkpoint=args.checkpoint,
@@ -474,6 +494,7 @@ def main() -> None:
         sampling_temperature=args.sampling_temperature,
         device=args.mlx_device,
         reuse_tree=not args.disable_tree_reuse,
+        evaluator_cache_entries=args.evaluator_cache_entries,
         progress_logger=(lambda message: print(message, file=sys.stderr)) if args.debug else None,
     )
     write_jsonl(records, out_path)

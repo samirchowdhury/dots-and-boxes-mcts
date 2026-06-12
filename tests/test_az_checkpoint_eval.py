@@ -37,7 +37,7 @@ def test_checkpoint_match_record_names_candidate_and_baseline_roles() -> None:
         candidate_checkpoint=Path("candidate.npz"),
         baseline_checkpoint=Path("baseline.npz"),
         candidate_player=1,
-        simulations=100,
+        simulations=2000,
         c_puct=1.5,
         decisions=[],
     )

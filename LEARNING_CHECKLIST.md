@@ -956,7 +956,7 @@ simulations, while the unsafe visit share keeps dropping before the selected
 move changes. For planning guided self-play runtimes, use the network-guided
 tables rather than the Numba UCT table.
 
-- [ ] Record network-guided tree reuse across real moves.
+- [x] Record retained network-guided runtime optimizations across real moves.
 
 Network-guided MCTS now reuses the retained search tree across real game moves
 by default in guided self-play, guided-vs-baseline evaluation, checkpoint
@@ -966,36 +966,28 @@ still rebuild from scratch; reusable game paths call `search_reusing_tree` and
 then advance the root with the actual played move. This matters during early
 self-play turns, where a sampled move may differ from the search-preferred move.
 
-Benchmark from `runs/stage-4/tree-reuse-benchmark/` using iter021, CPU MLX,
+Network-guided full-game paths also use a game-level evaluator cache by default
+(`500,000` entries, set `--evaluator-cache-entries 0` to disable where the CLI
+exposes the knob). The cache is scoped to one game/searcher and stores network
+policy/value outputs by exact `GameState`, avoiding repeated checkpoint
+evaluation and repeated snapshot encoding when tree reuse or transpositions
+revisit a state.
+
+Benchmark from `runs/stage-4/optimization-benchmark/` using iter021, CPU MLX,
 one 4x4 self-play game, seed `6001`, and `2,000` simulations per decision:
 
-| mode | wall time | decisions | final score | speedup |
-| --- | ---: | ---: | ---: | ---: |
-| no tree reuse | 19.90s | 24 | 3-6 | 1.00x |
-| tree reuse | 13.70s | 24 | 2-7 | 1.45x |
+| mode | wall time | decisions | final score | speedup vs baseline | time reduction |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| no tree reuse, no evaluator cache | 20.92s | 24 | 3-6 | 1.00x | 0.0% |
+| tree reuse, no evaluator cache | 14.17s | 24 | 2-7 | 1.48x | 32.3% |
+| tree reuse + evaluator cache | 11.84s | 24 | 3-6 | 1.77x | 43.4% |
 
-Interpretation: tree reuse gives a real single-game runtime win by carrying
-subtree visits forward and topping reused roots up to the configured simulation
-budget instead of spending a full fresh budget after every move. The game can
-change because the reused tree changes the effective search history; compare
-strength with match batches, not a single timed game.
-
-- [ ] Keep a short backlog of next network-guided optimizations.
-
-Try these in order, measuring a full `2,000`-simulation guided game after each:
-
-1. Game-level evaluator cache for network outputs and encoded tensors, shared
-   across every move in one game.
-2. Direct `GameState` encoding path to avoid repeated `state_snapshot` and
-   JSON-shaped conversion at every leaf.
-3. Batched leaf evaluation: collect multiple selected leaves, run one MLX batch,
-   and backpropagate their values. This is the largest likely NN-side speedup,
-   but it changes MCTS scheduling and needs careful tests.
-4. Compact array-backed guided search using the fast board representation from
-   Numba UCT, while still calling the network for policy/value estimates.
-5. Optional tactical/prior pruning, such as always preserving scoring moves and
-   pruning very-low-prior non-scoring moves. Treat this as a behavior-changing
-   experiment, not a pure runtime optimization.
+Interpretation: the retained runtime path gives a measured `43.4%` wall-time
+reduction on the 2,000-simulation guided self-play game without changing MCTS
+scheduling or state representation. Tree reuse can still change a game relative
+to a fresh-search baseline because retained subtree visits become part of later
+decisions; evaluator caching is intended to be behavior-preserving and only
+deduplicates identical network evaluations.
 
 Regression strategy for future optimizations:
 
@@ -1003,10 +995,10 @@ Regression strategy for future optimizations:
 - Preserve tests that `search()` remains fresh-root, reusable search advances to
   an existing child, mismatched states reset safely, reused roots top up to the
   target budget, and sampled self-play moves advance the tree.
-- For behavior-changing optimizations, rerun the unsafe-opener probe and at
-  least one checkpoint-match batch before trusting self-play data.
-- For runtime-only optimizations, benchmark both `--disable-tree-reuse` and
-  default reuse on the same checkpoint, seed, device, and simulation count.
+- Preserve tests that cached evaluator calls return identical policy/value
+  results and avoid recomputing identical states.
+- For runtime-only changes, benchmark both `--disable-tree-reuse` and default
+  reuse on the same checkpoint, seed, device, and simulation count.
 
 ## Stage 4.2: Pure-Restart AlphaZero-Style Loop
 
@@ -1015,10 +1007,28 @@ high-simulation search teacher.
 
 - [ ] Use the independent Stage 4 runner.
 
+Initialize a clean Stage 4 state with a random policy/value network:
+
 ```bash
-python -m dots_boxes_mcts.stage4_runner init-state
+pyenv activate data
+python -m dots_boxes_mcts.stage4_runner init-state \
+  --random-checkpoint \
+  --random-seed 1
+```
+
+By default this writes the random checkpoint to:
+
+```text
+runs/stage-4/stage4-random-policy-value-4x4-seed1.npz
+```
+
+Use `--checkpoint-out path/to/random.npz` if you want an explicit filename.
+Then inspect the state and the first planned commands:
+
+```bash
 python -m dots_boxes_mcts.stage4_runner status
 python -m dots_boxes_mcts.stage4_runner next --dry-run
+python -m dots_boxes_mcts.stage4_runner loop --iterations 2 --dry-run
 ```
 
 The Stage 4 runner writes only under `runs/stage-4/` by default:
@@ -1026,40 +1036,66 @@ The Stage 4 runner writes only under `runs/stage-4/` by default:
 - `stage4-state.json`,
 - `stage4-history.jsonl`,
 - self-play games,
+- self-play metadata,
 - converted training examples,
-- fresh/random or Stage 4 initialized checkpoints,
+- Stage 4 initialized checkpoints,
 - strategic summaries,
 - tactical probe outputs.
 
-It does not read or write the Stage 3 flywheel ledger. Iteration 1 trains from
-random weights by omitting `--init-checkpoint`; later iterations initialize from
-the promoted Stage 4 champion unless an explicit `--init-checkpoint` is passed.
+It does not read or write the Stage 3 flywheel ledger. Stage 4.2 self-play uses
+`NetworkGuidedMCTS`, so pure AlphaZero-style runs should start by creating a
+random policy/value checkpoint with `init-state --random-checkpoint`. That
+checkpoint is only a random initial network, not a pretrained champion. By
+default, the guided self-play path uses retained tree reuse and the per-game
+evaluator cache. Iteration 1 trains from the same random checkpoint that
+generated self-play; later iterations initialize from the promoted Stage 4
+champion by default.
 
-- [ ] Run a small Stage 4 smoke iteration before a large run.
+The default Stage 4.2 simulation budget is `2,000` simulations per decision.
+Pass `--simulations` to override it for smoke tests or larger runs.
+
+- [ ] Run AlphaZero-style learning.
 
 ```bash
-python -m dots_boxes_mcts.stage4_runner next \
-  --games 1 \
-  --simulations 100 \
-  --train-epochs 1 \
-  --mlx-device cpu \
-  --no-tactical-probe \
-  --quiet
+pyenv activate data
+python -m dots_boxes_mcts.stage4_runner loop \
+  --iterations 5
 ```
 
-- [ ] Run the real first pure-restart iteration once the smoke passes.
+The Stage 4 loop uses champion gating, like Stage 3.7: each completed candidate
+plays a checkpoint match against the current Stage 4 champion, and the loop
+promotes only if the match summary clears the configured thresholds. The loop
+also reports the network-guided unsafe-opener selection rate from the tactical
+probe so tactical drift is visible even though promotion is currently gated by
+head-to-head strength.
+
+Loop promotion policy:
+
+- Default gate: promote if `winRate >= 0.55` and
+  `averageScoreMargin >= 0.0` against the current Stage 4 champion.
+- Override the thresholds with `--min-win-rate` and
+  `--min-average-score-margin`.
+- The unsafe-opener selection rate is reported from the tactical probe, but it
+  is not yet a promotion gate.
+- If promoted, the candidate becomes `championCheckpoint` in
+  `stage4-state.json`.
+- If rejected, `championCheckpoint` remains unchanged, but
+  `latestCandidateCheckpoint` remains the rejected candidate. The next loop
+  iteration continues self-play and training from that latest candidate while
+  still gating against the unchanged champion.
+- If any command in an iteration fails, the loop stops before promotion because
+  no completed candidate is recorded.
+
+For a human-gated run, replace `loop` with one `next` call at a time, inspect
+the strategic summary, tactical probe, and replayed games, then promote inside
+Stage 4 only:
 
 ```bash
+pyenv activate data
 python -m dots_boxes_mcts.stage4_runner next \
   --games 25 \
-  --simulations 50000 \
   --mlx-device gpu
-```
 
-After each Stage 4 iteration, inspect the strategic summary, the tactical probe,
-and replay a few games. Promotion should happen inside Stage 4 only:
-
-```bash
 python -m dots_boxes_mcts.stage4_runner promote \
   --iteration 1 \
   --reason "cleared Stage 4 tactical and checkpoint review"

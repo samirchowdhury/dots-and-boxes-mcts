@@ -3,7 +3,7 @@ import os
 import pytest
 
 from dots_boxes_mcts.az_guided_self_play import play_guided_self_play_game
-from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.az_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.evaluate import play_mcts_vs_random_game
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game
 from dots_boxes_mcts.train import examples_from_records, overfit_examples
@@ -80,6 +80,29 @@ def test_network_guided_mcts_fresh_search_does_not_mutate_reused_tree() -> None:
 
     assert fresh.move in legal_moves(state)
     assert searcher._reuse_root is None  # noqa: SLF001
+
+
+def test_cached_network_evaluator_reuses_identical_state_result() -> None:
+    class CountingEvaluator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def evaluate(self, state: GameState) -> tuple[dict[str, float], float]:
+            self.calls += 1
+            moves = legal_moves(state)
+            return {move: 1.0 / len(moves) for move in moves}, 0.25
+
+    state = new_game(rows=3, cols=3)
+    evaluator = CountingEvaluator()
+    cached = CachedNetworkEvaluator(evaluator, max_entries=10)
+
+    first = cached.evaluate(state)
+    second = cached.evaluate(state)
+
+    assert first == second
+    assert evaluator.calls == 1
+    assert cached.misses == 1
+    assert cached.hits == 1
 
 
 def test_network_guided_mcts_returns_legal_move_from_checkpoint(tmp_path) -> None:

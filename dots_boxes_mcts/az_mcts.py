@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import random
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -52,6 +53,43 @@ class NetworkEvaluator:
             if legal_mask[0, index] > 0
         }
         return priors, float(np.array(value)[0])
+
+
+class CachedNetworkEvaluator:
+    def __init__(self, evaluator: NetworkEvaluator, max_entries: int = 500_000) -> None:
+        self.evaluator = evaluator
+        self.max_entries = max_entries
+        self.cache: OrderedDict[tuple, tuple[tuple[tuple[str, float], ...], float]] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+    def evaluate(self, state: GameState) -> tuple[dict[str, float], float]:
+        key = state_key(state)
+        cached = self.cache.get(key)
+        if cached is not None:
+            self.cache.move_to_end(key)
+            self.hits += 1
+            priors, value = cached
+            return dict(priors), value
+
+        priors, value = self.evaluator.evaluate(state)
+        self.misses += 1
+        if self.max_entries > 0:
+            self.cache[key] = (tuple(sorted(priors.items())), value)
+            if len(self.cache) > self.max_entries:
+                self.cache.popitem(last=False)
+        return priors, value
+
+
+def state_key(state: GameState) -> tuple:
+    return (
+        state.rows,
+        state.cols,
+        state.current_player,
+        tuple(sorted(state.edges)),
+        state.boxes,
+        state.scores,
+    )
 
 
 class NetworkGuidedMCTS:
