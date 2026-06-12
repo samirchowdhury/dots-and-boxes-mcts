@@ -166,26 +166,26 @@ a good reason.
 
 - [ ] Run small live PAPG batches on the 4x4-dot board.
 
-Use the dedicated Python runner for real batches. It mirrors PAPG's browser
-flow, including the `Thinking...` poll step, waits between live requests, and
-writes replayable JSONL files.
+Use the dedicated Chrome-backed Python runner for real batches. It opens the
+live PAPG page in Chrome, clicks the local bot's moves, reads PAPG's actual
+board replies, waits between live clicks, and writes replayable JSONL files.
 
 ```bash
-python -m dots_boxes_mcts.papg_eval \
+python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 10 \
   --seed 1 \
   --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-10-vs-papg-4x4.jsonl
 
-python -m dots_boxes_mcts.papg_eval \
+python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 57 \
   --seed 1001 \
   --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-57-vs-papg-4x4.jsonl
 
-python -m dots_boxes_mcts.papg_eval \
+python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 100 \
   --seed 2001 \
@@ -196,32 +196,20 @@ python -m dots_boxes_mcts.papg_eval \
 For 50-game batches, change `--games 10` to `--games 50`. Keep the runs
 single-threaded and leave `--request-delay 5` in place.
 
-The Codex Browser runner is still useful for a one-game visible-board smoke
-test when you specifically want Codex to verify the live page through the
-in-app browser. Do not paste this into your shell or Python prompt. It is
-JavaScript for Codex's browser automation environment; the easiest way to use
-it is to ask Codex something like:
+For checkpoint runs, use the same runner with `--checkpoint`, `--mlx-device`,
+and `--alternate-players` when you want an equal split between local player 0
+and local player 1:
 
-```text
-Use the Codex Browser plugin to run one PAPG smoke game with
-tools/papg_browser_runner.mjs.
+```bash
+python -m dots_boxes_mcts.papg_browser_eval \
+  --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
+  --games 10 \
+  --simulations 2000 \
+  --mlx-device gpu \
+  --alternate-players \
+  --request-delay 5 \
+  --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4.jsonl
 ```
-
-Codex will open/connect the in-app browser, load this module, and run:
-
-```js
-const { runPapgBrowserBatch } = await import("./tools/papg_browser_runner.mjs");
-await runPapgBrowserBatch({
-  browser,
-  games: 1,
-  simulationsList: [10, 50, 100],
-  requestDelayMs: 5000,
-});
-```
-
-For normal experiments, prefer the Python `papg_eval` commands above; they run
-from a regular terminal and do not depend on the Codex Browser pane staying
-alive.
 
 Each command prints wins, draws, losses, win rate, and average score margin.
 Every live game is stored as replayable JSONL under `runs/papg/stage-2.5/`.

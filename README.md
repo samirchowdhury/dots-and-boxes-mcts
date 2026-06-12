@@ -84,15 +84,15 @@ For live PAPG evaluation, use the dedicated paced runner:
 
 ```bash
 pyenv activate data
-python -m dots_boxes_mcts.papg_eval \
+python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 50 \
   --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-50-vs-papg-4x4.jsonl
 ```
 
-It mirrors PAPG's browser polling behavior and is preferred over Codex Browser
-for longer batches.
+It drives a real Chrome page, clicks the local bot's moves, and records PAPG's
+actual board replies.
 
 For a broader inspection routine, see `LEARNING_CHECKLIST.md`.
 

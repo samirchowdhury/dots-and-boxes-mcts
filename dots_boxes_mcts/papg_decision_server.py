@@ -12,7 +12,7 @@ from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.external_games import append_jsonl, external_game_record
 from dots_boxes_mcts.game import apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
-from dots_boxes_mcts.papg_eval import checkpoint_bot_name, infer_papg_reply
+from dots_boxes_mcts.papg_common import checkpoint_bot_name, infer_papg_reply
 
 _EVALUATORS: dict[tuple[str, str], NetworkEvaluator] = {}
 

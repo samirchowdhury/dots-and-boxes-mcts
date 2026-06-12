@@ -55,11 +55,11 @@ Open `http://localhost:8000` and choose the `runs/papg/...` file.
 
 ## Dedicated PAPG Runs
 
-Prefer the Python runner for repeatable Stage 2.5 batches:
+Use the Chrome-backed Python runner for repeatable live batches:
 
 ```bash
 pyenv activate data
-python -m dots_boxes_mcts.papg_eval \
+python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 50 \
   --seed 1001 \
@@ -67,15 +67,10 @@ python -m dots_boxes_mcts.papg_eval \
   --out runs/papg/stage-2.5/mcts-50-vs-papg-4x4.jsonl
 ```
 
-This runner talks to PAPG directly, keeps requests single-threaded, waits at
-least 5 seconds between requests, and writes replayable JSONL records under
-`runs/papg/stage-2.5/`.
-
-PAPG has a two-step response after a move. The initial human-move URL uses a
-`/dab?.+1+...` form and may return a `Thinking...` board with no legal move
-links. The browser then polls the corresponding `/dab?.+2+...` URL until PAPG's
-reply is available. `dots_boxes_mcts.papg_eval` mirrors that behavior, so it is
-now suitable for longer batches without relying on Codex Browser staying open.
+This runner drives a real Google Chrome page, clicks exact PAPG move links,
+reads PAPG's actual board replies, keeps games single-threaded, waits at least
+5 seconds between clicks, and writes replayable JSONL records under the
+requested `--out` path.
 
 For a cautious comparison batch:
 
@@ -83,7 +78,7 @@ For a cautious comparison batch:
 pyenv activate data
 for spec in "10 1" "57 1001" "100 2001"; do
   set -- $spec
-  python -m dots_boxes_mcts.papg_eval \
+  python -m dots_boxes_mcts.papg_browser_eval \
     --games 10 \
     --simulations "$1" \
     --seed "$2" \
@@ -96,29 +91,19 @@ For the larger 50-game version, change `--games 10` to `--games 50`. Expect it
 to take hours, not minutes, because every live PAPG request is deliberately
 paced. Keep it single-threaded.
 
-Use `--debug-dir runs/papg/stage-2.5/debug-<name>` only when diagnosing a failed
-run; it stores PAPG HTML responses and can grow quickly.
+For checkpoint evaluation with an equal player split:
 
-## Browser-Backed PAPG Runs
-
-The browser-backed runner remains useful for smoke testing the visible PAPG
-board from a Codex Browser session:
-
-```js
-const { runPapgBrowserBatch } = await import("./tools/papg_browser_runner.mjs");
-await runPapgBrowserBatch({
-  browser,
-  games: 1,
-  simulationsList: [10, 50, 100],
-  requestDelayMs: 5000,
-});
+```bash
+pyenv activate data
+python -m dots_boxes_mcts.papg_browser_eval \
+  --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
+  --games 10 \
+  --simulations 2000 \
+  --mlx-device gpu \
+  --alternate-players \
+  --request-delay 5 \
+  --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4.jsonl
 ```
-
-The runner uses the visible board as the source of truth, clicks exact PAPG move
-links, waits between moves, and appends completed games under
-`runs/papg/stage-2.5/`. Keep this for small smoke runs; use the Python runner
-for larger batches so the experiment is not tied to the Codex Browser pane
-lifecycle.
 
 ## Papg Move Indexes
 

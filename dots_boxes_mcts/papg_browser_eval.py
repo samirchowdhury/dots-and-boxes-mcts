@@ -8,7 +8,7 @@ from typing import Any
 
 from dots_boxes_mcts.external_games import external_game_record
 from dots_boxes_mcts.papg_decision_server import bot_name, decision_response
-from dots_boxes_mcts.papg_eval import PAPG_NEW_GAME_URL, summarize_papg_records
+from dots_boxes_mcts.papg_common import PAPG_NEW_GAME_URL, summarize_papg_records
 from dots_boxes_mcts.self_play import write_jsonl
 
 DEFAULT_CHROME_PATH = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
