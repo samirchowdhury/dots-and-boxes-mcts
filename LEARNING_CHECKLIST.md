@@ -1101,6 +1101,31 @@ python -m dots_boxes_mcts.stage4_runner promote \
   --reason "cleared Stage 4 tactical and checkpoint review"
 ```
 
+- [ ] Benchmark a trained Stage 4 checkpoint against live PAPG.
+
+After training the Stage 4 checkpoint through iteration 16, run the live
+browser-backed PAPG match with an equal player-side split:
+
+```bash
+python -m dots_boxes_mcts.papg_browser_eval \
+  --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
+  --games 50 \
+  --simulations 2000 \
+  --mlx-device gpu \
+  --alternate-players \
+  --request-delay 5 \
+  --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4-games50.jsonl
+```
+
+Observed result for `iter016` against live PAPG:
+
+- 50 completed games, all terminal and replay-valid.
+- Equal side split: 25 games as player 0, 25 games as player 1.
+- Overall record: 35 wins, 15 losses, 0 draws.
+- Win rate: 70%.
+- Average score margin: +1.76 boxes.
+- By side: 12-13 as player 0, 23-2 as player 1.
+
 ## Human Inspection Rhythm
 
 - [ ] After each feature, inspect the command, output file, and one relevant
