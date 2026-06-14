@@ -56,7 +56,7 @@ def generate_browser_papg_games(
     except ImportError as error:
         raise RuntimeError(
             "The browser PAPG runner needs Playwright. Install it with: "
-            "pyenv activate data && pip install playwright"
+            "`uv sync`."
         ) from error
 
     records: list[dict] = []

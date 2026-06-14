@@ -12,19 +12,19 @@ bot is improving without reading every line of code. The recurring pattern is:
 - [ ] Enter the repo.
 
 ```bash
-cd /Users/samirchowdhury/dots-and-boxes-mcts
+cd dots-and-boxes-mcts
 ```
 
-- [ ] Activate the Python environment before running Python commands.
+- [ ] Create or refresh the Python environment.
 
 ```bash
-pyenv activate data
+uv sync
 ```
 
 - [ ] Run the test suite before trusting experiment output.
 
 ```bash
-python -m pytest -q
+uv run python -m pytest -q
 ```
 
 ## Stage 1: Random Self-Play
@@ -35,7 +35,7 @@ valid Dots and Boxes games?
 - [ ] Generate a tiny batch of random games.
 
 ```bash
-python -m dots_boxes_mcts.self_play \
+uv run python -m dots_boxes_mcts.self_play \
   --games 5 \
   --rows 3 \
   --cols 3 \
@@ -52,7 +52,7 @@ sed -n '1p' runs/random-3x3.jsonl
 - [ ] Open the HTML replay tool and visually inspect a game.
 
 ```bash
-python -m dots_boxes_mcts.viewer
+uv run python -m dots_boxes_mcts.viewer
 ```
 
 Then open:
@@ -97,10 +97,10 @@ Goal: see improvement emerge from search, not from learning.
 - [ ] Run a few MCTS-vs-random batches.
 
 ```bash
-python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 10 --seed 1 --out runs/mcts-10-vs-random-4x4.jsonl
-python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 50 --seed 1 --out runs/mcts-50-vs-random-4x4.jsonl
-python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 100 --seed 1 --out runs/mcts-100-vs-random-4x4.jsonl
-python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 500 --seed 1 --out runs/mcts-500-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 10 --seed 1 --out runs/mcts-10-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 50 --seed 1 --out runs/mcts-50-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 100 --seed 1 --out runs/mcts-100-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 500 --seed 1 --out runs/mcts-500-vs-random-4x4.jsonl
 ```
 
 Each command prints win rate and average score margin. Look for the curve:
@@ -116,7 +116,7 @@ discarded after the move is chosen.
 So this command:
 
 ```bash
-python -m dots_boxes_mcts.evaluate \
+uv run python -m dots_boxes_mcts.evaluate \
   --games 50 \
   --rows 3 \
   --cols 3 \
@@ -131,7 +131,7 @@ from the current position before picking the next move.
 - [ ] Open the HTML viewer and replay a few MCTS games.
 
 ```bash
-python -m dots_boxes_mcts.viewer
+uv run python -m dots_boxes_mcts.viewer
 ```
 
 Then replay a few games from `runs/mcts-*.jsonl`. Look for:
@@ -169,19 +169,19 @@ live PAPG page in Chrome, clicks the local bot's moves, reads PAPG's actual
 board replies, and writes replayable JSONL files.
 
 ```bash
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 10 \
   --seed 1 \
   --out runs/papg/stage-2.5/mcts-10-vs-papg-4x4.jsonl
 
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 57 \
   --seed 1001 \
   --out runs/papg/stage-2.5/mcts-57-vs-papg-4x4.jsonl
 
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 100 \
   --seed 2001 \
@@ -196,7 +196,7 @@ and `--alternate-players` when you want an equal split between local player 0
 and local player 1:
 
 ```bash
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
   --games 10 \
   --simulations 2000 \
@@ -211,7 +211,7 @@ Every live game is stored as replayable JSONL under `runs/papg/stage-2.5/`.
 - [ ] Replay the PAPG games in the local viewer.
 
 ```bash
-python -m dots_boxes_mcts.viewer
+uv run python -m dots_boxes_mcts.viewer
 ```
 
 Then choose one of the `papg/stage-2.5/*.jsonl` files and inspect where PAPG
@@ -250,7 +250,7 @@ can memorize a handful of MCTS decision examples.
 - [ ] Generate a tiny debug batch.
 
 ```bash
-python -m dots_boxes_mcts.evaluate \
+uv run python -m dots_boxes_mcts.evaluate \
   --games 10 \
   --rows 3 \
   --cols 3 \
@@ -262,7 +262,7 @@ python -m dots_boxes_mcts.evaluate \
 - [ ] Preview the examples.
 
 ```bash
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.1/debug-mcts-vs-random-10.jsonl \
   --limit 10 \
   --preview \
@@ -280,7 +280,7 @@ Check that:
 - [ ] Run the tiny overfit test.
 
 ```bash
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.1/debug-mcts-vs-random-10.jsonl \
   --limit 20 \
   --overfit-epochs 1000 \
@@ -356,7 +356,7 @@ checkpoint sees a slightly richer board than the 3x3-dot smoke tests.
 - [ ] Run a 10-game smoke test.
 
 ```bash
-python -m dots_boxes_mcts.az_self_play \
+uv run python -m dots_boxes_mcts.az_self_play \
   --games 10 \
   --rows 4 \
   --cols 4 \
@@ -371,7 +371,7 @@ be `24.0`, because there are 24 edges and both MCTS players record every move.
 - [ ] Convert the smoke batch into examples and preview a few.
 
 ```bash
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.2/self-play-4x4-10.jsonl \
   --limit 10 \
   --preview \
@@ -383,7 +383,7 @@ Check that examples include both `player: 0` and `player: 1`.
 - [ ] Ramp to 100 games.
 
 ```bash
-python -m dots_boxes_mcts.az_self_play \
+uv run python -m dots_boxes_mcts.az_self_play \
   --games 100 \
   --rows 4 \
   --cols 4 \
@@ -391,7 +391,7 @@ python -m dots_boxes_mcts.az_self_play \
   --seed 1001 \
   --out runs/stage-3.2/self-play-4x4-100.jsonl
 
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.2/self-play-4x4-100.jsonl \
   --out runs/stage-3.2/examples-4x4-100.jsonl
 ```
@@ -402,7 +402,7 @@ Expected example count for 4x4 dots is `games * 24`, so 100 games should produce
 - [ ] Ramp to 1,000 games.
 
 ```bash
-python -m dots_boxes_mcts.az_self_play \
+uv run python -m dots_boxes_mcts.az_self_play \
   --games 1000 \
   --rows 4 \
   --cols 4 \
@@ -410,7 +410,7 @@ python -m dots_boxes_mcts.az_self_play \
   --seed 2001 \
   --out runs/stage-3.2/self-play-4x4-1000.jsonl
 
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.2/self-play-4x4-1000.jsonl \
   --out runs/stage-3.2/examples-4x4-1000.jsonl
 ```
@@ -427,7 +427,7 @@ play moves.
 - [ ] Train the first checkpoint.
 
 ```bash
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.2/examples-4x4-1000.jsonl \
   --train-epochs 20 \
   --batch-size 256 \
@@ -464,7 +464,7 @@ the value head instead of random rollouts.
 - [ ] Run one guided-search smoke test.
 
 ```bash
-python -m dots_boxes_mcts.az_mcts \
+uv run python -m dots_boxes_mcts.az_mcts \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --rows 4 \
   --cols 4 \
@@ -482,7 +482,7 @@ new training data.
 - [ ] Evaluate against random.
 
 ```bash
-python -m dots_boxes_mcts.az_evaluate \
+uv run python -m dots_boxes_mcts.az_evaluate \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --opponent random \
   --games 50 \
@@ -497,7 +497,7 @@ python -m dots_boxes_mcts.az_evaluate \
 - [ ] Evaluate against plain MCTS at the same simulation count.
 
 ```bash
-python -m dots_boxes_mcts.az_evaluate \
+uv run python -m dots_boxes_mcts.az_evaluate \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --opponent plain_mcts \
   --games 50 \
@@ -522,7 +522,7 @@ checkpoint, and inspect whether the loop is producing useful diversity.
 - [ ] Generate guided self-play.
 
 ```bash
-python -m dots_boxes_mcts.az_guided_self_play \
+uv run python -m dots_boxes_mcts.az_guided_self_play \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --iteration 1 \
   --games 200 \
@@ -555,7 +555,7 @@ runs/stage-3.6/guided-self-play-4x4-iter001-games200-sims250.meta.json
 - [ ] Convert guided games into examples.
 
 ```bash
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.6/guided-self-play-4x4-iter001-games200-sims250.jsonl \
   --out runs/stage-3.6/guided-examples-4x4-iter001-games200-sims250.jsonl
 ```
@@ -563,7 +563,7 @@ python -m dots_boxes_mcts.train \
 - [ ] Train the next checkpoint from the current champion on this batch only.
 
 ```bash
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.6/guided-examples-4x4-iter001-games200-sims250.jsonl \
   --init-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --train-epochs 10 \
@@ -579,7 +579,7 @@ python -m dots_boxes_mcts.train \
 - [ ] Evaluate the new checkpoint against the current champion.
 
 ```bash
-python -m dots_boxes_mcts.az_checkpoint_eval \
+uv run python -m dots_boxes_mcts.az_checkpoint_eval \
   --candidate runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz \
   --baseline runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --games 100 \
@@ -608,10 +608,10 @@ again.
 - [ ] Or run the same first iteration through the tracked pipeline runner.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel init-state \
+uv run python -m dots_boxes_mcts.az_flywheel init-state \
   --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
-python -m dots_boxes_mcts.az_flywheel next --dry-run
-python -m dots_boxes_mcts.az_flywheel next
+uv run python -m dots_boxes_mcts.az_flywheel next --dry-run
+uv run python -m dots_boxes_mcts.az_flywheel next
 ```
 
 This is the preferred path once you are ready to use the flywheel regularly.
@@ -644,7 +644,7 @@ promotion decision is current.
 - [ ] Initialize the tracked flywheel state.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel init-state \
+uv run python -m dots_boxes_mcts.az_flywheel init-state \
   --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
 ```
 
@@ -655,19 +655,19 @@ state file.
 - [ ] Check what the runner thinks is current.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel status
+uv run python -m dots_boxes_mcts.az_flywheel status
 ```
 
 - [ ] Dry-run the next tracked iteration.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel next --dry-run
+uv run python -m dots_boxes_mcts.az_flywheel next --dry-run
 ```
 
 - [ ] Run the next tracked iteration.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel next
+uv run python -m dots_boxes_mcts.az_flywheel next
 ```
 
 After `next` finishes, the runner reads the checkpoint-match replay file,
@@ -677,7 +677,7 @@ the promotion decision as `pending`.
 - [ ] Promote a candidate that clears the bar.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel promote \
+uv run python -m dots_boxes_mcts.az_flywheel promote \
   --iteration 1 \
   --reason "cleared promotion bar in checkpoint match"
 ```
@@ -693,7 +693,7 @@ Suggested first promotion bar:
 - [ ] Or reject a candidate and keep the current champion.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel reject \
+uv run python -m dots_boxes_mcts.az_flywheel reject \
   --iteration 1 \
   --reason "evaluation exposed repeated opening mistakes"
 ```
@@ -702,7 +702,7 @@ python -m dots_boxes_mcts.az_flywheel reject \
 iteration's evaluation file, writes a `rejected` decision and summary into the
 ledger, leaves `championCheckpoint` unchanged, and keeps `nextIteration`
 advanced. The candidate checkpoint and replay files stay on disk. The next
-`python -m dots_boxes_mcts.az_flywheel next` will still use the current champion
+`uv run python -m dots_boxes_mcts.az_flywheel next` will still use the current champion
 for self-play and evaluation, while training defaults to the previous iteration
 candidate unless you override `--init-checkpoint`.
 
@@ -716,7 +716,7 @@ optimization from a different checkpoint.
 - [ ] Or let the flywheel run several iterations with a fixed promotion policy.
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel loop \
+uv run python -m dots_boxes_mcts.az_flywheel loop \
   --iterations 5 \
   --min-win-rate 0.55 \
   --min-average-score-margin 0.0
@@ -733,7 +733,7 @@ optimization from the latest candidate.
 The old explicit form still works for one-off runs:
 
 ```bash
-python -m dots_boxes_mcts.az_flywheel \
+uv run python -m dots_boxes_mcts.az_flywheel \
   --iteration 2 \
   --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --dry-run
@@ -790,7 +790,7 @@ Key fields:
 - `forcedOpenerMoves`: opener moves made when no safe move existed.
 
 Historical backfill artifacts from the first PAPG/checkpoint review live under
-`runs/stage-3.8/`. Use `python -m dots_boxes_mcts.strategic_eval ...` only when
+`runs/stage-3.8/`. Use `uv run python -m dots_boxes_mcts.strategic_eval ...` only when
 analyzing replay files that were generated before strategic metrics were added
 to the normal eval summaries.
 
@@ -834,7 +834,7 @@ probes.
 - [ ] Validate the fast backend against the Python rule engine.
 
 ```bash
-python -m pytest -q tests/test_fast_mcts.py
+uv run python -m pytest -q tests/test_fast_mcts.py
 ```
 
 The fast backend keeps Python `GameState` snapshots as the public/replay format,
@@ -849,7 +849,7 @@ but performs rollout-heavy search with compact arrays. It must preserve:
 - [ ] Run a single fast-search smoke test.
 
 ```bash
-python -m dots_boxes_mcts.fast_mcts \
+uv run python -m dots_boxes_mcts.fast_mcts \
   --rows 4 \
   --cols 4 \
   --simulations 50000 \
@@ -859,7 +859,7 @@ python -m dots_boxes_mcts.fast_mcts \
 - [ ] Re-run the unsafe-opener probe with the Numba backend.
 
 ```bash
-python -m dots_boxes_mcts.mcts_simulation_probe \
+uv run python -m dots_boxes_mcts.mcts_simulation_probe \
   runs/stage-3.8/papg-stage3.6-unsafe-opener-positions.jsonl \
   --inputs-are-positions \
   --backend numba \
@@ -985,7 +985,7 @@ deduplicates identical network evaluations.
 
 Regression strategy for future optimizations:
 
-- Keep `python -m pytest -q` green.
+- Keep `uv run python -m pytest -q` green.
 - Preserve tests that `search()` remains fresh-root, reusable search advances to
   an existing child, mismatched states reset safely, reused roots top up to the
   target budget, and sampled self-play moves advance the tree.
@@ -1004,8 +1004,7 @@ high-simulation search teacher.
 Initialize a clean Stage 4 state with a random policy/value network:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.stage4_runner init-state \
+uv run python -m dots_boxes_mcts.stage4_runner init-state \
   --random-checkpoint \
   --random-seed 1
 ```
@@ -1020,9 +1019,9 @@ Use `--checkpoint-out path/to/random.npz` if you want an explicit filename.
 Then inspect the state and the first planned commands:
 
 ```bash
-python -m dots_boxes_mcts.stage4_runner status
-python -m dots_boxes_mcts.stage4_runner next --dry-run
-python -m dots_boxes_mcts.stage4_runner loop --iterations 2 --dry-run
+uv run python -m dots_boxes_mcts.stage4_runner status
+uv run python -m dots_boxes_mcts.stage4_runner next --dry-run
+uv run python -m dots_boxes_mcts.stage4_runner loop --iterations 2 --dry-run
 ```
 
 The Stage 4 runner writes only under `runs/stage-4/` by default:
@@ -1051,8 +1050,7 @@ Pass `--simulations` to override it for smoke tests or larger runs.
 - [ ] Run AlphaZero-style learning.
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.stage4_runner loop \
+uv run python -m dots_boxes_mcts.stage4_runner loop \
   --iterations 5
 ```
 
@@ -1085,12 +1083,11 @@ the strategic summary, tactical probe, and replayed games, then promote inside
 Stage 4 only:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.stage4_runner next \
+uv run python -m dots_boxes_mcts.stage4_runner next \
   --games 25 \
   --mlx-device gpu
 
-python -m dots_boxes_mcts.stage4_runner promote \
+uv run python -m dots_boxes_mcts.stage4_runner promote \
   --iteration 1 \
   --reason "cleared Stage 4 tactical and checkpoint review"
 ```
@@ -1101,7 +1098,7 @@ After training the Stage 4 checkpoint through iteration 16, run the live
 browser-backed PAPG match with an equal player-side split:
 
 ```bash
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
   --games 50 \
   --simulations 2000 \

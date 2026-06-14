@@ -297,7 +297,7 @@ def require_mlx(device: str | None = None):
     except ImportError as error:
         raise ImportError(
             "MLX is required for the Stage 3.1 overfit scaffold. "
-            "Run `pyenv activate data && python -m pip install mlx`."
+            "Run `uv sync` to install the project dependencies."
         ) from error
 
     if device is None:

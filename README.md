@@ -8,15 +8,22 @@ can generate random self-play games as JSONL.
 
 ## Environment
 
+This project uses `uv` for Python environment and dependency management. Install
+`uv`, then let it create the project-local `.venv` from `pyproject.toml` and
+`uv.lock`:
+
 ```bash
-pyenv activate data
-python -m pytest -q
+uv sync
+uv run python -m pytest -q
 ```
+
+`uv run` executes commands inside the managed project environment, so no manual
+virtualenv activation is required.
 
 ## Random Self-Play
 
 ```bash
-python -m dots_boxes_mcts.self_play \
+uv run python -m dots_boxes_mcts.self_play \
   --games 10 \
   --seed 1 \
   --out runs/random-self-play.jsonl
@@ -30,15 +37,13 @@ scores, winner, and terminal snapshot.
 Run a single UCT search from the initial position:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.mcts --rows 3 --cols 3 --simulations 100 --seed 1
+uv run python -m dots_boxes_mcts.mcts --rows 3 --cols 3 --simulations 100 --seed 1
 ```
 
 Evaluate MCTS against a random player and save replayable games:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.evaluate \
+uv run python -m dots_boxes_mcts.evaluate \
   --games 10 \
   --rows 3 \
   --cols 3 \
@@ -56,8 +61,7 @@ values from the player-to-move perspective.
 Use the local HTML replay viewer to inspect one JSONL game line visually.
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.viewer
+uv run python -m dots_boxes_mcts.viewer
 ```
 
 Then open `http://localhost:8000`, choose a file from `runs/`, enter a line
@@ -69,8 +73,7 @@ Games played against external bots, including PAPG, can be recorded in the same
 JSONL replay format:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.external_games \
+uv run python -m dots_boxes_mcts.external_games \
   --bot uct_mcts_10k \
   --papg-indexes \
   --out runs/papg/stage-2/uct-mcts-vs-papg-4x4.jsonl \
@@ -83,8 +86,7 @@ See `PAPG_EXPERIMENTS.md` for the folder convention and Papg move-index map.
 For live PAPG evaluation, use the dedicated Chrome-backed runner:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 50 \
   --out runs/papg/stage-2.5/mcts-50-vs-papg-4x4.jsonl
@@ -101,8 +103,7 @@ Build a tiny replayable MCTS batch, then convert its MCTS decisions into
 AlphaZero-style policy/value examples:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.evaluate \
+uv run python -m dots_boxes_mcts.evaluate \
   --games 2 \
   --rows 3 \
   --cols 3 \
@@ -110,7 +111,7 @@ python -m dots_boxes_mcts.evaluate \
   --seed 30 \
   --out runs/stage-3-tiny-mcts.jsonl
 
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3-tiny-mcts.jsonl \
   --limit 3 \
   --preview \
@@ -125,8 +126,7 @@ To verify that the learning pipeline can fit a tiny batch, run the MLX
 residual-conv overfit scaffold:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.1/debug-mcts-vs-random-10.jsonl \
   --limit 20 \
   --overfit-epochs 1000 \
@@ -146,8 +146,7 @@ want the smallest deterministic smoke test.
 Generate true 4x4-dot MCTS-vs-MCTS data for both players:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.az_self_play \
+uv run python -m dots_boxes_mcts.az_self_play \
   --games 100 \
   --rows 4 \
   --cols 4 \
@@ -155,7 +154,7 @@ python -m dots_boxes_mcts.az_self_play \
   --seed 1001 \
   --out runs/stage-3.2/self-play-4x4-100.jsonl
 
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.2/self-play-4x4-100.jsonl \
   --out runs/stage-3.2/examples-4x4-100.jsonl
 ```
@@ -168,8 +167,7 @@ For 4x4-dot boards, each game has 24 moves, so the example count should be
 Train a policy/value checkpoint from serialized Stage 3.2 examples:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.train \
+uv run python -m dots_boxes_mcts.train \
   runs/stage-3.2/examples-4x4-1000.jsonl \
   --train-epochs 20 \
   --batch-size 256 \
@@ -188,8 +186,7 @@ python -m dots_boxes_mcts.train \
 Run PUCT-style network-guided MCTS from the initial position:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.az_mcts \
+uv run python -m dots_boxes_mcts.az_mcts \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --rows 4 \
   --cols 4 \
@@ -200,7 +197,7 @@ python -m dots_boxes_mcts.az_mcts \
 Generate guided self-play for the next flywheel iteration:
 
 ```bash
-python -m dots_boxes_mcts.az_guided_self_play \
+uv run python -m dots_boxes_mcts.az_guided_self_play \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --iteration 1 \
   --games 100 \

@@ -37,7 +37,7 @@ def require_torch() -> None:
     if torch is None or nn is None:
         raise ImportError(
             "PyTorch is required for dots_boxes_mcts.network. "
-            "Activate the data pyenv, then install torch when you are ready to train."
+            "Install torch in the project environment when you are ready to train."
         )
 
 

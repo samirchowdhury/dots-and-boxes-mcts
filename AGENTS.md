@@ -2,14 +2,15 @@
 
 ## Environment
 
-- Use `pyenv activate data` before running Python commands.
+- Use `uv run` for Python commands.
+- Use `uv sync` to create or refresh the project-local `.venv`.
 - The repo targets Python 3.11+.
 
 ## Commands
 
-- Run tests with `python -m pytest -q`.
+- Run tests with `uv run python -m pytest -q`.
 - Generate random self-play games with:
-  `python -m dots_boxes_mcts.self_play --games 10 --seed 1 --out runs/random-self-play.jsonl`
+  `uv run python -m dots_boxes_mcts.self_play --games 10 --seed 1 --out runs/random-self-play.jsonl`
 
 ## Project Notes
 

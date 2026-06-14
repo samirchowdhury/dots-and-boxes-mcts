@@ -22,8 +22,7 @@ the full move sequence in order. This example is runnable, but replace the
 board-order moves with the real game:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.external_games \
+uv run python -m dots_boxes_mcts.external_games \
   --bot uct_mcts_10k \
   --out runs/papg/stage-2/uct-mcts-vs-papg-4x4.jsonl \
   h:0:0 h:0:1 h:0:2 v:0:0 v:0:1 v:0:2 v:0:3 \
@@ -35,8 +34,7 @@ python -m dots_boxes_mcts.external_games \
 You can also record Papg URL move numbers directly:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.external_games \
+uv run python -m dots_boxes_mcts.external_games \
   --bot uct_mcts_10k \
   --papg-indexes \
   --out runs/papg/stage-2/uct-mcts-vs-papg-4x4.jsonl \
@@ -47,8 +45,7 @@ python -m dots_boxes_mcts.external_games \
 Then replay it with:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.viewer
+uv run python -m dots_boxes_mcts.viewer
 ```
 
 Open `http://localhost:8000` and choose the `runs/papg/...` file.
@@ -58,8 +55,7 @@ Open `http://localhost:8000` and choose the `runs/papg/...` file.
 Use the Chrome-backed Python runner for repeatable live batches:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 50 \
   --seed 1001 \
@@ -73,10 +69,9 @@ requested `--out` path.
 For a cautious comparison batch:
 
 ```bash
-pyenv activate data
 for spec in "10 1" "57 1001" "100 2001"; do
   set -- $spec
-  python -m dots_boxes_mcts.papg_browser_eval \
+  uv run python -m dots_boxes_mcts.papg_browser_eval \
     --games 10 \
     --simulations "$1" \
     --seed "$2" \
@@ -90,8 +85,7 @@ single-threaded.
 For checkpoint evaluation with an equal player split:
 
 ```bash
-pyenv activate data
-python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.papg_browser_eval \
   --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
   --games 10 \
   --simulations 2000 \

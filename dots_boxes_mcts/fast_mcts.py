@@ -43,7 +43,7 @@ def require_numba() -> None:
     if njit is None:
         raise ImportError(
             "Numba is required for dots_boxes_mcts.fast_mcts. "
-            "Run `pyenv activate data && python -m pip install numba`."
+            "Run `uv sync` to install the project dependencies."
         ) from NUMBA_IMPORT_ERROR
 
 
