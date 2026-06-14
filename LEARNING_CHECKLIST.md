@@ -159,42 +159,37 @@ position, the selected move, visit counts, and why the move makes sense.
 
 Goal: compare search against a different hand-built bot, not just random.
 
-Important constraint: PAPG is a public website. Keep these batches small,
-single-threaded, and deliberately paced. Do not run tight request loops. The
-helper defaults to a 5-second delay between requests; only lower it if you have
-a good reason.
+Important constraint: PAPG is a public website. Keep these batches small and
+single-threaded. Do not run tight request loops.
 
 - [ ] Run small live PAPG batches on the 4x4-dot board.
 
 Use the dedicated Chrome-backed Python runner for real batches. It opens the
 live PAPG page in Chrome, clicks the local bot's moves, reads PAPG's actual
-board replies, waits between live clicks, and writes replayable JSONL files.
+board replies, and writes replayable JSONL files.
 
 ```bash
 python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 10 \
   --seed 1 \
-  --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-10-vs-papg-4x4.jsonl
 
 python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 57 \
   --seed 1001 \
-  --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-57-vs-papg-4x4.jsonl
 
 python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 100 \
   --seed 2001 \
-  --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-100-vs-papg-4x4.jsonl
 ```
 
 For 50-game batches, change `--games 10` to `--games 50`. Keep the runs
-single-threaded and leave `--request-delay 5` in place.
+single-threaded.
 
 For checkpoint runs, use the same runner with `--checkpoint`, `--mlx-device`,
 and `--alternate-players` when you want an equal split between local player 0
@@ -207,7 +202,6 @@ python -m dots_boxes_mcts.papg_browser_eval \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --request-delay 5 \
   --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4.jsonl
 ```
 
@@ -1113,7 +1107,6 @@ python -m dots_boxes_mcts.papg_browser_eval \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --request-delay 5 \
   --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4-games50.jsonl
 ```
 

@@ -80,14 +80,13 @@ python -m dots_boxes_mcts.external_games \
 
 See `PAPG_EXPERIMENTS.md` for the folder convention and Papg move-index map.
 
-For live PAPG evaluation, use the dedicated paced runner:
+For live PAPG evaluation, use the dedicated Chrome-backed runner:
 
 ```bash
 pyenv activate data
 python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 50 \
-  --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-50-vs-papg-4x4.jsonl
 ```
 

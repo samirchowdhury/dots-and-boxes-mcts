@@ -63,13 +63,11 @@ python -m dots_boxes_mcts.papg_browser_eval \
   --games 10 \
   --simulations 50 \
   --seed 1001 \
-  --request-delay 5 \
   --out runs/papg/stage-2.5/mcts-50-vs-papg-4x4.jsonl
 ```
 
 This runner drives a real Google Chrome page, clicks exact PAPG move links,
-reads PAPG's actual board replies, keeps games single-threaded, waits at least
-5 seconds between clicks, and writes replayable JSONL records under the
+reads PAPG's actual board replies, keeps games single-threaded, and writes replayable JSONL records under the
 requested `--out` path.
 
 For a cautious comparison batch:
@@ -82,14 +80,12 @@ for spec in "10 1" "57 1001" "100 2001"; do
     --games 10 \
     --simulations "$1" \
     --seed "$2" \
-    --request-delay 5 \
     --out "runs/papg/stage-2.5/mcts-$1-vs-papg-4x4.jsonl"
 done
 ```
 
-For the larger 50-game version, change `--games 10` to `--games 50`. Expect it
-to take hours, not minutes, because every live PAPG request is deliberately
-paced. Keep it single-threaded.
+For the larger 50-game version, change `--games 10` to `--games 50`. Keep it
+single-threaded.
 
 For checkpoint evaluation with an equal player split:
 
@@ -101,7 +97,6 @@ python -m dots_boxes_mcts.papg_browser_eval \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --request-delay 5 \
   --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4.jsonl
 ```
 
