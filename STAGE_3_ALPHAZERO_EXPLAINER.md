@@ -15,8 +15,8 @@ the browser game's rules.
 
 `dots_boxes_mcts/self_play.py` already writes one game per JSONL line. Each
 record has fields like `rows`, `cols`, `moves`, `finalScores`, `winner`,
-`terminal`, and a final `state` snapshot. `dots_boxes_mcts/evaluate.py` extends
-that shape for MCTS games with `players`, `mctsPlayer`, `simulations`, and
+`terminal`, and a final `state` snapshot. `dots_boxes_mcts/mcts_vs_random.py`
+extends that shape for MCTS games with `players`, `mctsPlayer`, `simulations`, and
 `decisions`. Each `decisions` entry stores the turn number, player, root
 `state`, selected move, and `search.stats` entries with `move`, `visits`, and
 `meanValue`.
@@ -108,8 +108,7 @@ but the network helps it spend simulations on better candidates.
    final scores, and winners.
 3. Convert each MCTS decision into `(encoded_state, policy_target, value_target)`.
 4. Train a new network checkpoint.
-5. Evaluate old checkpoint vs new checkpoint with `dots_boxes_mcts/evaluate.py`
-   or a Stage 3 evaluator.
+5. Evaluate old checkpoint vs new checkpoint with the Stage 3 evaluator.
 6. Replay early and late games in `dots_boxes_mcts.viewer` and look for behavior
    changes: taking boxes, delaying sacrifices, handling chains, and avoiding
    moves that hand the opponent a run.

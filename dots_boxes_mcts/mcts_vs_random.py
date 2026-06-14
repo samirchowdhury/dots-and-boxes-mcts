@@ -4,11 +4,37 @@ import argparse
 import json
 import random
 from pathlib import Path
+from typing import Literal
 
+from dots_boxes_mcts.fast_mcts import FastUCTMCTS
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
 from dots_boxes_mcts.self_play import write_jsonl
 from dots_boxes_mcts.strategic_eval import summarize_strategic_records
+
+Backend = Literal["python", "numba"]
+
+
+def make_searcher(
+    *,
+    backend: Backend,
+    simulations: int,
+    exploration_constant: float,
+    seed: int,
+) -> UCTMCTS | FastUCTMCTS:
+    if backend == "python":
+        return UCTMCTS(
+            simulations=simulations,
+            exploration_constant=exploration_constant,
+            seed=seed,
+        )
+    if backend == "numba":
+        return FastUCTMCTS(
+            simulations=simulations,
+            exploration_constant=exploration_constant,
+            seed=seed,
+        )
+    raise ValueError(f"Unknown backend: {backend}")
 
 
 def play_mcts_vs_random_game(
@@ -18,12 +44,14 @@ def play_mcts_vs_random_game(
     seed: int = 1,
     mcts_player: int = 0,
     exploration_constant: float = 2**0.5,
+    backend: Backend = "python",
 ) -> dict:
     if mcts_player not in {0, 1}:
         raise ValueError("mcts_player must be 0 or 1")
 
     rng = random.Random(seed)
-    mcts = UCTMCTS(
+    mcts = make_searcher(
+        backend=backend,
         simulations=simulations,
         exploration_constant=exploration_constant,
         seed=seed,
@@ -69,6 +97,7 @@ def generate_mcts_vs_random_games(
     seed: int = 1,
     mcts_player: int = 0,
     exploration_constant: float = 2**0.5,
+    backend: Backend = "python",
 ) -> list[dict]:
     records: list[dict] = []
     for game_index in range(games):
@@ -80,6 +109,7 @@ def generate_mcts_vs_random_games(
             seed=game_seed,
             mcts_player=mcts_player,
             exploration_constant=exploration_constant,
+            backend=backend,
         )
         record["gameIndex"] = game_index
         records.append(record)
@@ -147,11 +177,12 @@ def mcts_game_record(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate plain UCT MCTS against random.")
-    parser.add_argument("--games", type=int, default=10)
-    parser.add_argument("--rows", type=int, default=3)
-    parser.add_argument("--cols", type=int, default=3)
+    parser = argparse.ArgumentParser(description="Run MCTS against random play.")
+    parser.add_argument("--games", type=int, default=50)
+    parser.add_argument("--rows", type=int, default=4)
+    parser.add_argument("--cols", type=int, default=4)
     parser.add_argument("--simulations", type=int, default=100)
+    parser.add_argument("--backend", choices=["python", "numba"], default="python")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--mcts-player", type=int, choices=[0, 1], default=0)
     parser.add_argument("--exploration-constant", type=float, default=2**0.5)
@@ -169,6 +200,7 @@ def main() -> None:
         seed=args.seed,
         mcts_player=args.mcts_player,
         exploration_constant=args.exploration_constant,
+        backend=args.backend,
     )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_records(records, mcts_player=args.mcts_player), sort_keys=True))

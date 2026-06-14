@@ -3,6 +3,7 @@
 Dots and Boxes is a nostalgic children's game; possibly the second strategy game that children learn after tic-tac-toe. In this repo, we build a bot for Dots and Boxes using AlphaZero-style self-play with Monte Carlo Tree Search (MCTS).
 
 This README is meant to be a pedagogical guide. Follow this pattern:
+
 1. Run or inspect a small experiment.
 2. Look at the evidence: games, stats, visual replays, and failure cases.
 3. Read only the one or two files that explain the mechanism you are studying.
@@ -48,30 +49,25 @@ uv run python -m dots_boxes_mcts.viewer
 Then open `http://localhost:8000`, choose a file from `runs/`, enter a line
 number, and step through the game.
 
-## Plain UCT MCTS
+## Stage 2: Plain MCTS
 
-Run a single UCT search from the initial position:
+Goal: see improvement emerge from search.
+
+Now we can let one of the bots play with MCTS. At each turn, the MCTS bot simulates a number of moves from the current board position and selects the best one. It does not learn from one game to the next.
+
+- [ ] Run a few MCTS-vs-random batches.
+
+The reference search code lives in `mcts.py`; `fast_mcts.py` is the Numba backend; `mcts_vs_random.py` is the batch runner that measures MCTS against random play.
 
 ```bash
-uv run python -m dots_boxes_mcts.mcts --rows 3 --cols 3 --simulations 100 --seed 1
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --simulations 10 --out runs/mcts-10-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --simulations 50 --out runs/mcts-50-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --simulations 100 --out runs/mcts-100-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --simulations 500 --out runs/mcts-500-vs-random-4x4.jsonl
 ```
 
-Evaluate MCTS against a random player and save replayable games:
-
-```bash
-uv run python -m dots_boxes_mcts.evaluate \
-  --games 10 \
-  --rows 3 \
-  --cols 3 \
-  --simulations 100 \
-  --seed 1 \
-  --out runs/mcts-vs-random-3x3.jsonl
-```
-
-Each MCTS game record includes the normal replay fields plus `decisions`, a list
-of MCTS turns with the root state, selected move, child visit counts, and mean
-values from the player-to-move perspective.
-
+Using `--backend numba` points the code to `fast_mcts.py`; the default `mcts.py` is the more readable alternative.
+Each command prints win rate and average score margin. Observe that deeper search leads to more wins, as expected.
 
 ## External Bot Games
 
@@ -109,7 +105,8 @@ Build a tiny replayable MCTS batch, then convert its MCTS decisions into
 AlphaZero-style policy/value examples:
 
 ```bash
-uv run python -m dots_boxes_mcts.evaluate \
+uv run python -m dots_boxes_mcts.mcts_vs_random \
+  --backend numba \
   --games 2 \
   --rows 3 \
   --cols 3 \

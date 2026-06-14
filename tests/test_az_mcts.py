@@ -4,7 +4,7 @@ import pytest
 
 from dots_boxes_mcts.az_guided_self_play import play_guided_self_play_game
 from dots_boxes_mcts.az_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
-from dots_boxes_mcts.evaluate import play_mcts_vs_random_game
+from dots_boxes_mcts.mcts_vs_random import play_mcts_vs_random_game
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game
 from dots_boxes_mcts.train import examples_from_records, overfit_examples
 

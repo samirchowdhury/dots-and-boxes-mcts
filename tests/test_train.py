@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pytest
 
-from dots_boxes_mcts.evaluate import play_mcts_vs_random_game
+from dots_boxes_mcts.mcts_vs_random import play_mcts_vs_random_game
 from dots_boxes_mcts.train import (
     checkpoint_metadata,
     examples_from_records,

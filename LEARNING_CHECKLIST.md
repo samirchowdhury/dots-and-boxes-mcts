@@ -97,10 +97,10 @@ Goal: see improvement emerge from search, not from learning.
 - [ ] Run a few MCTS-vs-random batches.
 
 ```bash
-uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 10 --seed 1 --out runs/mcts-10-vs-random-4x4.jsonl
-uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 50 --seed 1 --out runs/mcts-50-vs-random-4x4.jsonl
-uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 100 --seed 1 --out runs/mcts-100-vs-random-4x4.jsonl
-uv run python -m dots_boxes_mcts.evaluate --games 50 --rows 4 --cols 4 --simulations 500 --seed 1 --out runs/mcts-500-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --games 50 --rows 4 --cols 4 --simulations 10 --seed 1 --out runs/mcts-10-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --games 50 --rows 4 --cols 4 --simulations 50 --seed 1 --out runs/mcts-50-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --games 50 --rows 4 --cols 4 --simulations 100 --seed 1 --out runs/mcts-100-vs-random-4x4.jsonl
+uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --games 50 --rows 4 --cols 4 --simulations 500 --seed 1 --out runs/mcts-500-vs-random-4x4.jsonl
 ```
 
 Each command prints win rate and average score margin. Look for the curve:
@@ -116,7 +116,8 @@ discarded after the move is chosen.
 So this command:
 
 ```bash
-uv run python -m dots_boxes_mcts.evaluate \
+uv run python -m dots_boxes_mcts.mcts_vs_random \
+  --backend numba \
   --games 50 \
   --rows 3 \
   --cols 3 \
@@ -145,7 +146,7 @@ Then replay a few games from `runs/mcts-*.jsonl`. Look for:
 
 ```bash
 sed -n '1,260p' dots_boxes_mcts/mcts.py
-sed -n '1,260p' dots_boxes_mcts/evaluate.py
+sed -n '1,260p' dots_boxes_mcts/mcts_vs_random.py
 ```
 
 - [ ] Ask for a move-choice explanation from one position.
@@ -250,7 +251,8 @@ can memorize a handful of MCTS decision examples.
 - [ ] Generate a tiny debug batch.
 
 ```bash
-uv run python -m dots_boxes_mcts.evaluate \
+uv run python -m dots_boxes_mcts.mcts_vs_random \
+  --backend numba \
   --games 10 \
   --rows 3 \
   --cols 3 \
