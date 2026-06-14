@@ -1,10 +1,11 @@
-# Dots and Boxes MCTS
+# dots-and-boxes-mcts
 
-Python experiments for Dots and Boxes self-play and future MCTS work.
+Dots and Boxes is a nostalgic children's game; possibly the second strategy game that children learn after tic-tac-toe. In this repo, we build a bot for Dots and Boxes using AlphaZero-style self-play with Monte Carlo Tree Search (MCTS).
 
-This repo starts deliberately small: it duplicates the browser game's rules in
-Python, checks parity against canonical fixtures from `../dots-and-boxes`, and
-can generate random self-play games as JSONL.
+This README is meant to be a pedagogical guide. Follow this pattern:
+1. Run or inspect a small experiment.
+2. Look at the evidence: games, stats, visual replays, and failure cases.
+3. Read only the one or two files that explain the mechanism you are studying.
 
 ## Environment
 
@@ -20,7 +21,11 @@ uv run python -m pytest -q
 `uv run` executes commands inside the managed project environment, so no manual
 virtualenv activation is required.
 
-## Random Self-Play
+## Stage 1: Random Self-Play
+
+Goal: understand the game simulator, where the recorded game is saved, and how to view recorded games later.
+
+- [ ] Generate a tiny batch of random games.
 
 ```bash
 uv run python -m dots_boxes_mcts.self_play \
@@ -31,6 +36,17 @@ uv run python -m dots_boxes_mcts.self_play \
 
 Each output line is one complete game with the board size, seed, move list, final
 scores, winner, and terminal snapshot.
+
+### Replay Viewer
+
+- [ ] Use the local HTML replay viewer to inspect one JSONL game line visually.
+
+```bash
+uv run python -m dots_boxes_mcts.viewer
+```
+
+Then open `http://localhost:8000`, choose a file from `runs/`, enter a line
+number, and step through the game.
 
 ## Plain UCT MCTS
 
@@ -56,16 +72,6 @@ Each MCTS game record includes the normal replay fields plus `decisions`, a list
 of MCTS turns with the root state, selected move, child visit counts, and mean
 values from the player-to-move perspective.
 
-## Replay Viewer
-
-Use the local HTML replay viewer to inspect one JSONL game line visually.
-
-```bash
-uv run python -m dots_boxes_mcts.viewer
-```
-
-Then open `http://localhost:8000`, choose a file from `runs/`, enter a line
-number, and step through the game.
 
 ## External Bot Games
 
