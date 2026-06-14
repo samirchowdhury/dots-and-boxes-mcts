@@ -1,10 +1,17 @@
 import json
 
+import pytest
+
+from dots_boxes_mcts.fast_mcts import FastUCTMCTS, NUMBA_IMPORT_ERROR
 from dots_boxes_mcts.game import legal_moves, new_game
-from dots_boxes_mcts.papg_decision_server import bot_name, decision_response
+from dots_boxes_mcts.mcts import UCTMCTS
+from dots_boxes_mcts.papg_decision_server import bot_name, decision_response, searcher_from_payload
 
 
 def test_decision_response_returns_uct_move_for_nonterminal_state() -> None:
+    if NUMBA_IMPORT_ERROR is not None:
+        pytest.skip("Numba is not installed")
+
     payload = {
         "rows": 2,
         "cols": 2,
@@ -22,6 +29,9 @@ def test_decision_response_returns_uct_move_for_nonterminal_state() -> None:
 
 
 def test_decision_response_syncs_papg_first_when_model_is_second() -> None:
+    if NUMBA_IMPORT_ERROR is not None:
+        pytest.skip("Numba is not installed")
+
     payload = {
         "rows": 2,
         "cols": 2,
@@ -88,3 +98,28 @@ def test_decision_response_writes_second_player_record(tmp_path) -> None:
 
 def test_bot_name_for_checkpoint_uses_checkpoint_stem() -> None:
     assert bot_name(checkpoint="/tmp/candidate.npz", simulations=250) == "network_guided_mcts_250_candidate"
+
+
+def test_searcher_from_payload_defaults_to_fast_mcts() -> None:
+    if NUMBA_IMPORT_ERROR is not None:
+        pytest.skip("Numba is not installed")
+
+    searcher = searcher_from_payload(
+        payload={},
+        checkpoint=None,
+        simulations=1,
+        seed=1,
+    )
+
+    assert isinstance(searcher, FastUCTMCTS)
+
+
+def test_searcher_from_payload_can_use_python_mcts() -> None:
+    searcher = searcher_from_payload(
+        payload={"backend": "python"},
+        checkpoint=None,
+        simulations=1,
+        seed=1,
+    )
+
+    assert isinstance(searcher, UCTMCTS)

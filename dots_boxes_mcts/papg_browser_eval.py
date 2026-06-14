@@ -44,6 +44,7 @@ def generate_browser_papg_games(
     seed: int = 1,
     c_puct: float = 1.5,
     mlx_device: str = "cpu",
+    backend: str = "numba",
     our_player: int = 0,
     alternate_players: bool = False,
     headless: bool = False,
@@ -93,6 +94,7 @@ def generate_browser_papg_games(
                     seed=seed + game_index,
                     c_puct=c_puct,
                     mlx_device=mlx_device,
+                    backend=backend,
                     our_player=game_our_player,
                     recording=recording,
                 )
@@ -119,6 +121,7 @@ def play_browser_papg_game(
     seed: int,
     c_puct: float,
     mlx_device: str,
+    backend: str,
     our_player: int,
     recording: RecordingOptions | None = None,
 ) -> dict:
@@ -144,6 +147,7 @@ def play_browser_papg_game(
         "checkpoint": checkpoint_value,
         "cPuct": c_puct,
         "mlxDevice": mlx_device,
+        "backend": backend,
         "our_player": our_player,
     }
 
@@ -471,6 +475,7 @@ def main() -> None:
     parser.add_argument("--checkpoint", type=Path, help="Optional MLX checkpoint for network-guided MCTS.")
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
+    parser.add_argument("--backend", choices=["python", "numba"], default="numba")
     parser.add_argument("--our-player", type=int, choices=[0, 1], default=0)
     parser.add_argument("--alternate-players", action="store_true")
     parser.add_argument("--seed", type=int, default=1)
@@ -533,6 +538,7 @@ def main() -> None:
         seed=args.seed,
         c_puct=args.c_puct,
         mlx_device=args.mlx_device,
+        backend=args.backend,
         our_player=args.our_player,
         alternate_players=args.alternate_players,
         headless=args.headless,

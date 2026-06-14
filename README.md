@@ -89,13 +89,15 @@ For live PAPG evaluation, use the dedicated Chrome-backed runner:
 
 ```bash
 uv run python -m dots_boxes_mcts.papg_browser_eval \
-  --games 10 \
-  --simulations 50 \
-  --out runs/papg/stage-2.5/mcts-50-vs-papg-4x4.jsonl
+  --games 1 \
+  --alternate-players \
+  --simulations 2000 \
+  --out runs/papg/stage-2/mcts-2000-vs-papg-4x4.jsonl
 ```
 
 It drives a real Chrome page, clicks the local bot's moves, and records PAPG's
-actual board replies.
+actual board replies. Without `--checkpoint`, it uses fast Numba UCT MCTS by
+default; pass `--backend python` to use the readable reference implementation.
 
 For a broader inspection routine, see `LEARNING_CHECKLIST.md`.
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.external_games import append_jsonl, external_game_record
+from dots_boxes_mcts.fast_mcts import FastUCTMCTS
 from dots_boxes_mcts.game import apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
 from dots_boxes_mcts.papg_common import checkpoint_bot_name, infer_papg_reply
@@ -141,7 +142,12 @@ def searcher_from_payload(
             c_puct=float(payload["cPuct"]),
             seed=seed,
         )
-    return UCTMCTS(simulations=simulations, seed=seed)
+    backend = payload.get("backend", "numba")
+    if backend == "numba":
+        return FastUCTMCTS(simulations=simulations, seed=seed)
+    if backend == "python":
+        return UCTMCTS(simulations=simulations, seed=seed)
+    raise ValueError(f"Unknown MCTS backend: {backend}")
 
 
 def cached_evaluator(*, checkpoint: str, device: str) -> NetworkEvaluator:

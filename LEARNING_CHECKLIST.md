@@ -167,7 +167,9 @@ single-threaded. Do not run tight request loops.
 
 Use the dedicated Chrome-backed Python runner for real batches. It opens the
 live PAPG page in Chrome, clicks the local bot's moves, reads PAPG's actual
-board replies, and writes replayable JSONL files.
+board replies, and writes replayable JSONL files. Without `--checkpoint`, it
+uses fast Numba UCT MCTS by default; pass `--backend python` to use the readable
+reference implementation.
 
 ```bash
 uv run python -m dots_boxes_mcts.papg_browser_eval \
