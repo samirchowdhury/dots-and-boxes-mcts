@@ -9,11 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
-from dots_boxes_mcts.external_games import append_jsonl, external_game_record
 from dots_boxes_mcts.fast_mcts import FastUCTMCTS
 from dots_boxes_mcts.game import apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
-from dots_boxes_mcts.papg_common import checkpoint_bot_name, infer_papg_reply
+from dots_boxes_mcts.papg_common import checkpoint_bot_name, infer_papg_reply, papg_game_record
 
 _EVALUATORS: dict[tuple[str, str], NetworkEvaluator] = {}
 
@@ -94,8 +93,7 @@ def write_record_response(
 ) -> dict:
     bot = bot_name(checkpoint=checkpoint, simulations=simulations)
     our_player = int(payload.get("our_player", 0))
-    record = external_game_record(
-        source="papg",
+    record = papg_game_record(
         opponent="papg",
         bot=bot,
         rows=rows,
@@ -115,7 +113,7 @@ def write_record_response(
         record["checkpoint"] = checkpoint
         record["cPuct"] = payload["cPuct"]
         record["mlxDevice"] = payload["mlxDevice"]
-    append_jsonl(record, Path(payload["out"]))
+    append_jsonl_record(record, Path(payload["out"]))
     return {
         "moves": moves,
         "terminal": record["terminal"],
@@ -124,6 +122,13 @@ def write_record_response(
         "finalScores": record["finalScores"],
         "record": record,
     }
+
+
+def append_jsonl_record(record: dict, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("a", encoding="utf8") as output:
+        output.write(json.dumps(record, separators=(",", ":"), sort_keys=True))
+        output.write("\n")
 
 
 def searcher_from_payload(

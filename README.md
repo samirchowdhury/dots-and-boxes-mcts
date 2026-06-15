@@ -69,27 +69,13 @@ uv run python -m dots_boxes_mcts.mcts_vs_random --backend numba --simulations 50
 Using `--backend numba` points the code to `fast_mcts.py`; the default `mcts.py` is the more readable alternative.
 Each command prints win rate and average score margin. Observe that deeper search leads to more wins, as expected.
 
-## External Bot Games
+### Playing Against an External Bot
 
-Games played against external bots, including PAPG, can be recorded in the same
-JSONL replay format:
-
-```bash
-uv run python -m dots_boxes_mcts.external_games \
-  --bot uct_mcts_10k \
-  --papg-indexes \
-  --out runs/papg/stage-2/uct-mcts-vs-papg-4x4.jsonl \
-  1 3 5 7 9 11 13 15 17 19 21 23 \
-  25 27 29 31 33 35 37 39 41 43 45 47
-```
-
-See `PAPG_EXPERIMENTS.md` for the folder convention and Papg move-index map.
-
-For live PAPG evaluation, use the dedicated Chrome-backed runner:
+Now that we have a bot with a non-random strategy, we can meaningfully try to play against other bots. For live PAPG evaluation, use the dedicated Chrome-backed runner:
 
 ```bash
 uv run python -m dots_boxes_mcts.papg_browser_eval \
-  --games 1 \
+  --games 2 \
   --alternate-players \
   --simulations 2000 \
   --out runs/papg/stage-2/mcts-2000-vs-papg-4x4.jsonl
@@ -98,6 +84,8 @@ uv run python -m dots_boxes_mcts.papg_browser_eval \
 It drives a real Chrome page, clicks the local bot's moves, and records PAPG's
 actual board replies. Without `--checkpoint`, it uses fast Numba UCT MCTS by
 default; pass `--backend python` to use the readable reference implementation.
+
+See `PAPG_EXPERIMENTS.md` for the folder convention and extra PAPG notes.
 
 For a broader inspection routine, see `LEARNING_CHECKLIST.md`.
 

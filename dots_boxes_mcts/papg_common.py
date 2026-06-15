@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from dots_boxes_mcts.external_games import edge_to_papg_index
-from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game
+from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 
 PAPG_BASE_URL = "http://www.papg.com"
 PAPG_NEW_GAME_URL = f"{PAPG_BASE_URL}/dab.html"
@@ -22,6 +21,91 @@ PAPG_SIZE_VALUES = {
 
 def checkpoint_bot_name(*, checkpoint: Path, simulations: int) -> str:
     return f"network_guided_mcts_{simulations}_{checkpoint.stem}"
+
+
+def papg_index_to_edge(index: int, rows: int, cols: int) -> str:
+    if rows < 2 or cols < 2:
+        raise ValueError("Papg index conversion needs at least a 2x2 dot grid.")
+    if index < 0:
+        raise ValueError(f"Unknown Papg move index: {index}")
+
+    table_width = cols * 2 - 1
+    table_height = rows * 2 - 1
+    table_row, table_col = divmod(index, table_width)
+
+    if table_row >= table_height:
+        raise ValueError(f"Unknown Papg {rows}x{cols} move index: {index}")
+
+    if table_row % 2 == 0 and table_col % 2 == 1:
+        return f"h:{table_row // 2}:{(table_col - 1) // 2}"
+
+    if table_row % 2 == 1 and table_col % 2 == 0:
+        return f"v:{(table_row - 1) // 2}:{table_col // 2}"
+
+    raise ValueError(f"Papg index {index} is a dot or box cell, not an edge.")
+
+
+def papg_indexes_to_edges(indexes: list[int], rows: int = 3, cols: int = 3) -> list[str]:
+    return [papg_index_to_edge(index, rows=rows, cols=cols) for index in indexes]
+
+
+def edge_to_papg_index(edge_id: str, rows: int, cols: int) -> int:
+    kind, raw_row, raw_col = edge_id.split(":")
+    row = int(raw_row)
+    col = int(raw_col)
+    table_width = cols * 2 - 1
+
+    if kind == "h":
+        return (row * 2) * table_width + col * 2 + 1
+    if kind == "v":
+        return (row * 2 + 1) * table_width + col * 2
+
+    raise ValueError(f"Invalid edge id: {edge_id}")
+
+
+def papg_game_record(
+    *,
+    opponent: str,
+    bot: str,
+    rows: int,
+    cols: int,
+    moves: list[str],
+    our_player: int = 0,
+    source: str = "papg",
+    notes: str | None = None,
+) -> dict:
+    if our_player not in {0, 1}:
+        raise ValueError("our_player must be 0 or 1.")
+
+    state = replay_moves(rows=rows, cols=cols, moves=moves)
+    opponent_player = 1 if our_player == 0 else 0
+    record = {
+        "source": source,
+        "opponent": opponent,
+        "bot": bot,
+        "rows": state.rows,
+        "cols": state.cols,
+        "players": {
+            str(our_player): bot,
+            str(opponent_player): opponent,
+        },
+        "ourPlayer": our_player,
+        "moves": moves,
+        "finalScores": [state.scores[0], state.scores[1]],
+        "winner": state.winner,
+        "terminal": state.terminal,
+        "state": state_snapshot(state),
+    }
+    if notes:
+        record["notes"] = notes
+    return record
+
+
+def replay_moves(*, rows: int, cols: int, moves: list[str]) -> GameState:
+    state = new_game(rows=rows, cols=cols)
+    for move in moves:
+        state = apply_move(state, move)
+    return state
 
 
 def sync_papg_moves(state: GameState, page: PapgPage, *, papg_player: int = 1) -> list[str]:

@@ -1,10 +1,7 @@
-import json
-
 import pytest
 
-from dots_boxes_mcts.external_games import (
-    append_jsonl,
-    external_game_record,
+from dots_boxes_mcts.papg_common import (
+    papg_game_record,
     papg_indexes_to_edges,
 )
 
@@ -63,11 +60,10 @@ def test_papg_index_mapping_rejects_non_edge_cells() -> None:
         papg_indexes_to_edges([0], rows=4, cols=4)
 
 
-def test_external_game_record_replays_complete_game() -> None:
+def test_papg_game_record_replays_complete_game() -> None:
     moves = ["h:0:0", "h:1:0", "v:0:0", "v:0:1"]
 
-    record = external_game_record(
-        source="papg",
+    record = papg_game_record(
         opponent="papg",
         bot="manual_test_bot",
         rows=2,
@@ -84,15 +80,3 @@ def test_external_game_record_replays_complete_game() -> None:
     assert record["winner"] == 1
     assert record["notes"] == "tiny capture"
     assert record["state"]["boxes"] == [[1]]
-
-
-def test_append_jsonl_keeps_multiple_captures(tmp_path) -> None:
-    out_path = tmp_path / "papg" / "games.jsonl"
-    first = {"moves": ["h:0:0"]}
-    second = {"moves": ["h:0:1"]}
-
-    append_jsonl(first, out_path)
-    append_jsonl(second, out_path)
-
-    lines = out_path.read_text(encoding="utf8").splitlines()
-    assert [json.loads(line) for line in lines] == [first, second]

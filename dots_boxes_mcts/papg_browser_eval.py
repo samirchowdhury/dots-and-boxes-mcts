@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from dots_boxes_mcts.external_games import external_game_record
 from dots_boxes_mcts.game import apply_move, new_game
 from dots_boxes_mcts.papg_decision_server import bot_name, decision_response
-from dots_boxes_mcts.papg_common import PAPG_NEW_GAME_URL, summarize_papg_records
+from dots_boxes_mcts.papg_common import PAPG_NEW_GAME_URL, papg_game_record, summarize_papg_records
 from dots_boxes_mcts.self_play import write_jsonl
 
 DEFAULT_CHROME_PATH = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
@@ -213,8 +212,7 @@ def play_browser_papg_game(
     )
     moves = list(final_response["moves"])
     bot = bot_name(checkpoint=checkpoint_value, simulations=simulations)
-    record = external_game_record(
-        source="papg",
+    record = papg_game_record(
         opponent="papg",
         bot=bot,
         rows=rows,
