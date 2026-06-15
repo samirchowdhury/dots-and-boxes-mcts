@@ -156,39 +156,41 @@ Pick one MCTS game where search clearly changed the move choice. Show me the
 position, the selected move, visit counts, and why the move makes sense.
 ```
 
-## Stage 2.5: Play The PAPG Bot
+## Stage 2.5: Play The dotsandboxes.org Bot
 
 Goal: compare search against a different hand-built bot, not just random.
 
-Important constraint: PAPG is a public website. Keep these batches small and
-single-threaded. Do not run tight request loops.
+Important constraint: dotsandboxes.org is a public website. Keep these batches
+small and single-threaded. The runner blocks log, high-score, and analytics
+requests by default; the page's opponent engine runs client-side after the page
+assets load.
 
-- [ ] Run small live PAPG batches on the 4x4-dot board.
+- [ ] Run small live dotsandboxes.org batches on the 4x4-dot board.
 
 Use the dedicated Chrome-backed Python runner for real batches. It opens the
-live PAPG page in Chrome, clicks the local bot's moves, reads PAPG's actual
-board replies, and writes replayable JSONL files. Without `--checkpoint`, it
-uses fast Numba UCT MCTS by default; pass `--backend python` to use the readable
-reference implementation.
+live page in Chrome, plays through dotsandboxes.org's client-side engine, reads
+ordered moves from the page's `gameCode`, and writes replayable JSONL files.
+Without `--checkpoint`, it uses fast Numba UCT MCTS by default; pass
+`--backend python` to use the readable reference implementation.
 
 ```bash
-uv run python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --games 10 \
   --simulations 10 \
   --seed 1 \
-  --out runs/papg/stage-2.5/mcts-10-vs-papg-4x4.jsonl
+  --out runs/dotsandboxes-org/stage-2.5/mcts-10-vs-dotsandboxes-org-4x4.jsonl
 
-uv run python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --games 10 \
   --simulations 57 \
   --seed 1001 \
-  --out runs/papg/stage-2.5/mcts-57-vs-papg-4x4.jsonl
+  --out runs/dotsandboxes-org/stage-2.5/mcts-57-vs-dotsandboxes-org-4x4.jsonl
 
-uv run python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --games 10 \
   --simulations 100 \
   --seed 2001 \
-  --out runs/papg/stage-2.5/mcts-100-vs-papg-4x4.jsonl
+  --out runs/dotsandboxes-org/stage-2.5/mcts-100-vs-dotsandboxes-org-4x4.jsonl
 ```
 
 For 50-game batches, change `--games 10` to `--games 50`. Keep the runs
@@ -199,33 +201,34 @@ and `--alternate-players` when you want an equal split between local player 0
 and local player 1:
 
 ```bash
-uv run python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
   --games 10 \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4.jsonl
+  --out runs/dotsandboxes-org/stage-4/iter016-network-guided-sims2000-vs-dotsandboxes-org-4x4.jsonl
 ```
 
 Each command prints wins, draws, losses, win rate, and average score margin.
-Every live game is stored as replayable JSONL under `runs/papg/stage-2.5/`.
+Every live game is stored as replayable JSONL under `runs/dotsandboxes-org/stage-2.5/`.
 
-- [ ] Replay the PAPG games in the local viewer.
+- [ ] Replay the dotsandboxes.org games in the local viewer.
 
 ```bash
 uv run python -m dots_boxes_mcts.viewer
 ```
 
-Then choose one of the `papg/stage-2.5/*.jsonl` files and inspect where PAPG
-takes boxes, extends chains, or punishes a bad sacrifice.
+Then choose one of the `dotsandboxes-org/stage-2.5/*.jsonl` files and inspect
+where the browser opponent takes boxes, extends chains, or punishes a bad
+sacrifice.
 
 - [ ] Summarize whether search budget changed the odds.
 
 ```text
-Compare the 10, 50, and 100 simulation PAPG batches. Give me a table of win
-rate, draws, losses, average score margin, and two replay line numbers worth
-watching.
+Compare the 10, 50, and 100 simulation dotsandboxes.org batches. Give me a
+table of win rate, draws, losses, average score margin, and two replay line
+numbers worth watching.
 ```
 
 ## Stage 3: AlphaZero-Style Training
@@ -958,7 +961,7 @@ tables rather than the Numba UCT table.
 
 Network-guided MCTS now reuses the retained search tree across real game moves
 by default in guided self-play, guided-vs-baseline evaluation, checkpoint
-matches, and guided PAPG evaluation. The compatibility escape hatch is
+matches, and guided browser-opponent evaluation. The compatibility escape hatch is
 `--disable-tree-reuse`. Fresh single-position calls to `NetworkGuidedMCTS.search`
 still rebuild from scratch; reusable game paths call `search_reusing_tree` and
 then advance the root with the actual played move. This matters during early
@@ -1096,22 +1099,22 @@ uv run python -m dots_boxes_mcts.stage4_runner promote \
   --reason "cleared Stage 4 tactical and checkpoint review"
 ```
 
-- [ ] Benchmark a trained Stage 4 checkpoint against live PAPG.
+- [ ] Benchmark a trained Stage 4 checkpoint against dotsandboxes.org.
 
 After training the Stage 4 checkpoint through iteration 16, run the live
-browser-backed PAPG match with an equal player-side split:
+browser-backed dotsandboxes.org match with an equal player-side split:
 
 ```bash
-uv run python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
   --games 50 \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --out runs/papg/stage-4/iter016-network-guided-sims2000-vs-papg-4x4-games50.jsonl
+  --out runs/dotsandboxes-org/stage-4/iter016-network-guided-sims2000-vs-dotsandboxes-org-4x4-games50.jsonl
 ```
 
-Observed result for `iter016` against live PAPG:
+Observed result for `iter016` against the previous live PAPG benchmark:
 
 - 50 completed games, all terminal and replay-valid.
 - Equal side split: 25 games as player 0, 25 games as player 1.

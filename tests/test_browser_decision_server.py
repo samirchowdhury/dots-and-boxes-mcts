@@ -5,7 +5,7 @@ import pytest
 from dots_boxes_mcts.fast_mcts import FastUCTMCTS, NUMBA_IMPORT_ERROR
 from dots_boxes_mcts.game import legal_moves, new_game
 from dots_boxes_mcts.mcts import UCTMCTS
-from dots_boxes_mcts.papg_decision_server import bot_name, decision_response, searcher_from_payload
+from dots_boxes_mcts.browser_decision_server import bot_name, decision_response, searcher_from_payload
 
 
 def test_decision_response_returns_uct_move_for_nonterminal_state() -> None:
@@ -28,7 +28,7 @@ def test_decision_response_returns_uct_move_for_nonterminal_state() -> None:
     assert response["decision"]["turn"] == 0
 
 
-def test_decision_response_syncs_papg_first_when_model_is_second() -> None:
+def test_decision_response_syncs_opponent_first_when_model_is_second() -> None:
     if NUMBA_IMPORT_ERROR is not None:
         pytest.skip("Numba is not installed")
 
@@ -51,12 +51,14 @@ def test_decision_response_syncs_papg_first_when_model_is_second() -> None:
 
 
 def test_decision_response_writes_terminal_record(tmp_path) -> None:
-    out_path = tmp_path / "papg.jsonl"
+    out_path = tmp_path / "external.jsonl"
     payload = {
         "rows": 2,
         "cols": 2,
         "simulations": 1,
         "seed": 1,
+        "opponent": "dotsandboxes.org",
+        "source": "dotsandboxes.org",
         "moves": ["h:0:0", "h:1:0", "v:0:0", "v:0:1"],
         "drawn_edges": [],
         "decisions": [],
@@ -70,17 +72,21 @@ def test_decision_response_writes_terminal_record(tmp_path) -> None:
     assert response["winner"] == 1
     records = [json.loads(line) for line in out_path.read_text(encoding="utf8").splitlines()]
     assert records[0]["bot"] == "uct_mcts_1"
+    assert records[0]["opponent"] == "dotsandboxes.org"
+    assert records[0]["source"] == "dotsandboxes.org"
     assert records[0]["finalScores"] == [0, 1]
 
 
 def test_decision_response_writes_second_player_record(tmp_path) -> None:
-    out_path = tmp_path / "papg-second.jsonl"
+    out_path = tmp_path / "external-second.jsonl"
     payload = {
         "rows": 2,
         "cols": 2,
         "simulations": 1,
         "seed": 1,
         "our_player": 1,
+        "opponent": "dotsandboxes.org",
+        "source": "dotsandboxes.org",
         "moves": ["h:0:0", "h:1:0", "v:0:0", "v:0:1"],
         "drawn_edges": [],
         "decisions": [],
@@ -93,7 +99,7 @@ def test_decision_response_writes_second_player_record(tmp_path) -> None:
     assert response["terminal"] is True
     records = [json.loads(line) for line in out_path.read_text(encoding="utf8").splitlines()]
     assert records[0]["ourPlayer"] == 1
-    assert records[0]["players"] == {"1": "uct_mcts_1", "0": "papg"}
+    assert records[0]["players"] == {"1": "uct_mcts_1", "0": "dotsandboxes.org"}
 
 
 def test_bot_name_for_checkpoint_uses_checkpoint_stem() -> None:

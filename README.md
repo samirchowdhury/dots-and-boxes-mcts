@@ -71,21 +71,24 @@ Each command prints win rate and average score margin. Observe that deeper searc
 
 ### Playing Against an External Bot
 
-Now that we have a bot with a non-random strategy, we can meaningfully try to play against other bots. For live PAPG evaluation, use the dedicated Chrome-backed runner:
+Now that we have a bot with a non-random strategy, we can meaningfully try to play against other bots. For dotsandboxes.org evaluation, use the dedicated Chrome-backed runner:
 
 ```bash
-uv run python -m dots_boxes_mcts.papg_browser_eval \
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --games 2 \
   --alternate-players \
   --simulations 2000 \
-  --out runs/papg/stage-2/mcts-2000-vs-papg-4x4.jsonl
+  --out runs/dotsandboxes-org/stage-2/mcts-2000-vs-dotsandboxes-org-4x4.jsonl
 ```
 
-It drives a real Chrome page, clicks the local bot's moves, and records PAPG's
-actual board replies. Without `--checkpoint`, it uses fast Numba UCT MCTS by
-default; pass `--backend python` to use the readable reference implementation.
+It drives a real Chrome page, plays through dotsandboxes.org's client-side
+engine, blocks the site's log/high-score/analytics requests by default, and
+records ordered moves from the page's game code. Without `--checkpoint`, it uses
+fast Numba UCT MCTS by default; pass `--backend python` to use the readable
+reference implementation.
 
-See `PAPG_EXPERIMENTS.md` for the folder convention and extra PAPG notes.
+See `DOTSANDBOXES_ORG_EXPERIMENTS.md` for the folder convention and extra
+dotsandboxes.org notes.
 
 For a broader inspection routine, see `LEARNING_CHECKLIST.md`.
 

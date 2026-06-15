@@ -12,7 +12,11 @@ from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.fast_mcts import FastUCTMCTS
 from dots_boxes_mcts.game import apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
-from dots_boxes_mcts.papg_common import checkpoint_bot_name, infer_papg_reply, papg_game_record
+from dots_boxes_mcts.external_bot_common import (
+    checkpoint_bot_name,
+    external_game_record,
+    infer_opponent_reply,
+)
 
 _EVALUATORS: dict[tuple[str, str], NetworkEvaluator] = {}
 
@@ -32,7 +36,7 @@ def decision_response(payload: dict[str, Any]) -> dict:
 
     missing = [edge for edge in payload["drawn_edges"] if edge not in state.edges]
     if missing:
-        for move in infer_papg_reply(state, missing, papg_player=1 - our_player):
+        for move in infer_opponent_reply(state, missing, opponent_player=1 - our_player):
             moves.append(move)
             state = apply_move(state, move)
 
@@ -93,17 +97,20 @@ def write_record_response(
 ) -> dict:
     bot = bot_name(checkpoint=checkpoint, simulations=simulations)
     our_player = int(payload.get("our_player", 0))
-    record = papg_game_record(
-        opponent="papg",
+    opponent = payload.get("opponent", "external")
+    source = payload.get("source", opponent)
+    record = external_game_record(
+        opponent=opponent,
         bot=bot,
         rows=rows,
         cols=cols,
         moves=moves,
         our_player=our_player,
+        source=source,
         notes=(
-            "Browser-backed Papg game with network-guided MCTS."
+            f"Browser-backed {opponent} game with network-guided MCTS."
             if checkpoint
-            else "Browser-backed Stage 2.5 Papg game."
+            else f"Browser-backed {opponent} game."
         ),
     )
     record["seed"] = payload["seed"]
@@ -168,8 +175,8 @@ def bot_name(*, checkpoint: str | None, simulations: int) -> str:
     return f"uct_mcts_{simulations}"
 
 
-class PapgDecisionHandler(BaseHTTPRequestHandler):
-    server_version = "PapgDecisionServer/0.1"
+class BrowserDecisionHandler(BaseHTTPRequestHandler):
+    server_version = "BrowserDecisionServer/0.1"
 
     def do_GET(self) -> None:
         if self.path != "/health":
@@ -204,7 +211,7 @@ class PapgDecisionHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve PAPG browser move decisions over localhost.")
+    parser = argparse.ArgumentParser(description="Serve browser opponent move decisions over localhost.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--stdio", action="store_true", help="Read JSON payloads from stdin and write JSON lines.")
@@ -219,8 +226,8 @@ def main() -> None:
         serve_file_bridge(args.file_bridge, poll_seconds=args.poll_seconds)
         return
 
-    server = ThreadingHTTPServer((args.host, args.port), PapgDecisionHandler)
-    print(f"Papg decision server listening on http://{args.host}:{args.port}", flush=True)
+    server = ThreadingHTTPServer((args.host, args.port), BrowserDecisionHandler)
+    print(f"Browser decision server listening on http://{args.host}:{args.port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -228,7 +235,7 @@ def main() -> None:
 
 
 def serve_stdio() -> None:
-    print("Papg decision worker ready", flush=True)
+    print("Browser decision worker ready", flush=True)
     for line in sys.stdin:
         if not line.strip():
             continue
@@ -241,7 +248,7 @@ def serve_stdio() -> None:
 
 def serve_file_bridge(directory: Path, *, poll_seconds: float = 0.05) -> None:
     directory.mkdir(parents=True, exist_ok=True)
-    print(f"Papg decision file bridge ready at {directory}", flush=True)
+    print(f"Browser decision file bridge ready at {directory}", flush=True)
     while True:
         for request_path in sorted(directory.glob("request-*.json")):
             request_id = request_path.stem.removeprefix("request-")

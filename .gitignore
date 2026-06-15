@@ -5,10 +5,10 @@ __pycache__/
 *.pyc
 runs/*
 !runs/.gitkeep
-!runs/papg/
-runs/papg/*
-!runs/papg/.gitkeep
-!runs/papg/stage-*/
-runs/papg/stage-*/*
-!runs/papg/stage-*/.gitkeep
+!runs/dotsandboxes-org/
+runs/dotsandboxes-org/*
+!runs/dotsandboxes-org/.gitkeep
+!runs/dotsandboxes-org/stage-*/
+runs/dotsandboxes-org/stage-*/*
+!runs/dotsandboxes-org/stage-*/.gitkeep
 research/
