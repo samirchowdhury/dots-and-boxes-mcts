@@ -210,6 +210,7 @@ def test_guided_self_play_advances_tree_with_sampled_move(monkeypatch) -> None:
         simulations=10,
         seed=2,
         temperature_moves=1,
+        reuse_tree=True,
     )
 
     selected = record["decisions"][0]["selectedMove"]

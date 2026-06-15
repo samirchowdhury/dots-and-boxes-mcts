@@ -25,7 +25,7 @@ def play_guided_vs_baseline_game(
     guided_player: int = 0,
     c_puct: float = 1.5,
     device: str = "cpu",
-    reuse_tree: bool = True,
+    reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> dict:
     if guided_player not in {0, 1}:
@@ -98,7 +98,7 @@ def generate_guided_vs_baseline_games(
     guided_player: int = 0,
     c_puct: float = 1.5,
     device: str = "cpu",
-    reuse_tree: bool = True,
+    reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> list[dict]:
     records: list[dict] = []
@@ -176,7 +176,12 @@ def main() -> None:
     parser.add_argument("--guided-player", type=int, choices=[0, 1], default=0)
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
-    parser.add_argument("--disable-tree-reuse", action="store_true")
+    parser.add_argument(
+        "--enable-tree-reuse",
+        action="store_true",
+        help="Retain played subtrees between moves and run a full fresh budget.",
+    )
+    parser.add_argument("--disable-tree-reuse", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--evaluator-cache-entries", type=int, default=DEFAULT_EVALUATOR_CACHE_ENTRIES)
     parser.add_argument("--out", type=Path, default=Path("runs/stage-3.5/eval.jsonl"))
     args = parser.parse_args()
@@ -195,7 +200,7 @@ def main() -> None:
         guided_player=args.guided_player,
         c_puct=args.c_puct,
         device=args.mlx_device,
-        reuse_tree=not args.disable_tree_reuse,
+        reuse_tree=args.enable_tree_reuse and not args.disable_tree_reuse,
         evaluator_cache_entries=args.evaluator_cache_entries,
     )
     write_jsonl(records, args.out)

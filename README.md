@@ -102,7 +102,7 @@ EpsilonZero is the name for our tiny AlphaZero-inspired bot. Let's recall the Al
         - The next simulation starts again from the root and may now traverse into the newly initialized children.
     - After all simulations are complete, AlphaZero selects a move based on the updated tree statistics. The normalized visit counts from the root `s_t` are saved as a policy target `π_t` for later.
 
-4. At the end of each game, we get a score `z_t` for each `s_t` (win or loss from the perspective of the player to move at that state). Here `s_t` is the state we had at time step `t`. The network parameters `θ` are updated so that `p_θ(s_t)->π_t` and `v_θ(s_t)->z_t`.
+4. At the end of each game, we get a score `z_t` for each `s_t` (final outcome from the perspective of the player to move at that state). Here `s_t` is the state we had at time step `t`. The network parameters `θ` are updated so that `p_θ(s_t)->π_t` and `v_θ(s_t)->z_t`.
 5. Repeat steps 2-4.
 
 ## Stage 3.2 MCTS Self-Play
@@ -174,6 +174,11 @@ uv run python -m dots_boxes_mcts.az_guided_self_play \
   --mlx-device gpu \
   --debug
 ```
+
+By default this starts a fresh search tree at each move, matching the simplified
+AlphaZero pseudocode. Add `--enable-tree-reuse` to retain the played child
+subtree between moves, AlphaGo Zero-style, while still running a full fresh
+simulation budget at each new root.
 
 By default this writes a parameter-derived JSONL path such as
 `runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims25.jsonl`, plus a

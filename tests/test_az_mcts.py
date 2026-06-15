@@ -47,7 +47,7 @@ def test_network_guided_mcts_advances_reused_tree_to_existing_child() -> None:
     assert searcher._reuse_root.state == next_state  # noqa: SLF001
 
 
-def test_network_guided_mcts_reused_tree_tops_up_to_budget() -> None:
+def test_network_guided_mcts_reused_tree_runs_full_fresh_budget() -> None:
     state = new_game(rows=3, cols=3)
     searcher = NetworkGuidedMCTS(evaluator=UniformEvaluator(), simulations=5, seed=1)
     result = searcher.search_reusing_tree(state)
@@ -58,7 +58,7 @@ def test_network_guided_mcts_reused_tree_tops_up_to_budget() -> None:
     searcher.search_reusing_tree(next_state)
 
     assert reused_visits > 0
-    assert searcher._reuse_root.visits == 5  # noqa: SLF001
+    assert searcher._reuse_root.visits == reused_visits + 5  # noqa: SLF001
 
 
 def test_network_guided_mcts_resets_reused_tree_on_state_mismatch() -> None:

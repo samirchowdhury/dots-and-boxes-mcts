@@ -169,8 +169,7 @@ class NetworkGuidedMCTS:
             raise ValueError("Cannot search from a terminal state.")
         root = self._reusable_root_for(state)
         self._prepare_root(root)
-        simulations_to_run = max(0, self.simulations - root.visits)
-        for _ in range(simulations_to_run):
+        for _ in range(self.simulations):
             self._run_simulation(root)
         return self._search_result(root, self.simulations)
 

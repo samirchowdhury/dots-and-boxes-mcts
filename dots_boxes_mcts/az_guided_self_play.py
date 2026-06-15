@@ -31,7 +31,7 @@ def play_guided_self_play_game(
     temperature_moves: int = DEFAULT_TEMPERATURE_MOVES,
     sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
-    reuse_tree: bool = True,
+    reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
     progress_logger: ProgressLogger | None = None,
     game_index: int | None = None,
@@ -152,7 +152,7 @@ def generate_guided_self_play_games(
     temperature_moves: int = DEFAULT_TEMPERATURE_MOVES,
     sampling_temperature: float = DEFAULT_SAMPLING_TEMPERATURE,
     device: str = "cpu",
-    reuse_tree: bool = True,
+    reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
     progress_logger: ProgressLogger | None = None,
 ) -> list[dict]:
@@ -414,7 +414,16 @@ def main() -> None:
     parser.add_argument("--temperature-moves", type=int, default=DEFAULT_TEMPERATURE_MOVES)
     parser.add_argument("--sampling-temperature", type=float, default=DEFAULT_SAMPLING_TEMPERATURE)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
-    parser.add_argument("--disable-tree-reuse", action="store_true")
+    parser.add_argument(
+        "--enable-tree-reuse",
+        action="store_true",
+        help="Retain the played child subtree between moves and run a full fresh budget.",
+    )
+    parser.add_argument(
+        "--disable-tree-reuse",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument(
         "--evaluator-cache-entries",
         type=int,
@@ -477,7 +486,7 @@ def main() -> None:
         sampling_temperature=args.sampling_temperature,
         device=args.mlx_device,
         debug=args.debug,
-        reuse_tree=not args.disable_tree_reuse,
+        reuse_tree=args.enable_tree_reuse and not args.disable_tree_reuse,
         evaluator_cache_entries=args.evaluator_cache_entries,
     )
     records = generate_guided_self_play_games(
@@ -493,7 +502,7 @@ def main() -> None:
         temperature_moves=args.temperature_moves,
         sampling_temperature=args.sampling_temperature,
         device=args.mlx_device,
-        reuse_tree=not args.disable_tree_reuse,
+        reuse_tree=args.enable_tree_reuse and not args.disable_tree_reuse,
         evaluator_cache_entries=args.evaluator_cache_entries,
         progress_logger=(lambda message: print(message, file=sys.stderr)) if args.debug else None,
     )

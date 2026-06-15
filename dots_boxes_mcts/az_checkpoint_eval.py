@@ -26,7 +26,7 @@ def play_checkpoint_match_game(
     c_puct: float = 1.5,
     opening_random_plies: int = 2,
     device: str = "cpu",
-    reuse_tree: bool = True,
+    reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> dict:
     if candidate_player not in {0, 1}:
@@ -124,7 +124,7 @@ def generate_checkpoint_match_games(
     opening_random_plies: int = 2,
     device: str = "cpu",
     alternate_colors: bool = True,
-    reuse_tree: bool = True,
+    reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> list[dict]:
     records: list[dict] = []
@@ -194,7 +194,7 @@ def checkpoint_match_record(
     decisions: list[dict],
     opening_random_plies: int = 0,
     opening_moves: list[str] | None = None,
-    reuse_tree: bool = True,
+    reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
 ) -> dict:
     baseline_player = 1 - candidate_player
@@ -240,7 +240,12 @@ def main() -> None:
     parser.add_argument("--opening-random-plies", type=int, default=2)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--no-alternate-colors", action="store_true")
-    parser.add_argument("--disable-tree-reuse", action="store_true")
+    parser.add_argument(
+        "--enable-tree-reuse",
+        action="store_true",
+        help="Retain played subtrees between moves and run a full fresh budget.",
+    )
+    parser.add_argument("--disable-tree-reuse", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--evaluator-cache-entries", type=int, default=DEFAULT_EVALUATOR_CACHE_ENTRIES)
     parser.add_argument("--out", type=Path, default=Path("runs/stage-3.6/checkpoint-match.jsonl"))
     args = parser.parse_args()
@@ -262,7 +267,7 @@ def main() -> None:
         opening_random_plies=args.opening_random_plies,
         device=args.mlx_device,
         alternate_colors=not args.no_alternate_colors,
-        reuse_tree=not args.disable_tree_reuse,
+        reuse_tree=args.enable_tree_reuse and not args.disable_tree_reuse,
         evaluator_cache_entries=args.evaluator_cache_entries,
     )
     write_jsonl(records, args.out)

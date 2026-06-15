@@ -50,7 +50,7 @@ def test_checkpoint_match_record_names_candidate_and_baseline_roles() -> None:
     }
     assert record["candidateCheckpoint"] == "candidate.npz"
     assert record["baselineCheckpoint"] == "baseline.npz"
-    assert record["reuseTree"] is True
+    assert record["reuseTree"] is False
 
 
 def test_checkpoint_match_uses_seeded_random_openings_for_game_diversity(monkeypatch) -> None:
