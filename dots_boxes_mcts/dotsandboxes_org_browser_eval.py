@@ -61,6 +61,7 @@ def generate_dotsandboxes_org_games(
     site_url: str = DOTSANDBOXES_ORG_URL,
     site_think_time: float = DEFAULT_SITE_THINK_TIME,
     block_telemetry: bool = True,
+    opening_top_k: int = 1,
     recording: RecordingOptions | None = None,
 ) -> list[dict]:
     try:
@@ -95,9 +96,12 @@ def generate_dotsandboxes_org_games(
             block_nonessential_site_traffic(context)
         page = context.new_page()
         video = page.video if recording and recording.video_path is not None else None
+        opening_counts_by_player = {0: 0, 1: 0}
         try:
             for game_index in range(games):
                 game_our_player = game_index % 2 if alternate_players else our_player
+                opening_index = opening_counts_by_player[game_our_player]
+                opening_counts_by_player[game_our_player] += 1
                 record = play_dotsandboxes_org_game(
                     page=page,
                     checkpoint=checkpoint,
@@ -112,6 +116,8 @@ def generate_dotsandboxes_org_games(
                     site_url=site_url,
                     site_think_time=site_think_time,
                     block_telemetry=block_telemetry,
+                    opening_top_k=opening_top_k,
+                    opening_index=opening_index,
                     recording=recording,
                 )
                 record["gameIndex"] = game_index
@@ -147,10 +153,16 @@ def play_dotsandboxes_org_game(
     site_url: str = DOTSANDBOXES_ORG_URL,
     site_think_time: float = DEFAULT_SITE_THINK_TIME,
     block_telemetry: bool = True,
+    opening_top_k: int = 1,
+    opening_index: int = 0,
     recording: RecordingOptions | None = None,
 ) -> dict:
     if our_player not in {0, 1}:
         raise ValueError("our_player must be 0 or 1")
+    if opening_top_k < 1:
+        raise ValueError("opening_top_k must be at least 1")
+    if opening_index < 0:
+        raise ValueError("opening_index must be non-negative")
     start_dotsandboxes_org_game(
         page=page,
         rows=rows,
@@ -183,6 +195,8 @@ def play_dotsandboxes_org_game(
         "our_player": our_player,
         "opponent": DOTSANDBOXES_ORG_OPPONENT,
         "source": DOTSANDBOXES_ORG_OPPONENT,
+        "opening_top_k": opening_top_k,
+        "opening_index": opening_index,
     }
 
     max_turns = rows * (cols - 1) + cols * (rows - 1)
@@ -207,6 +221,7 @@ def play_dotsandboxes_org_game(
                 **base_payload,
                 "moves": moves,
                 "drawn_edges": browser_state["drawn"],
+                "decisions_played": len(decisions),
             }
         )
         moves = list(response["moves"])
@@ -261,6 +276,8 @@ def play_dotsandboxes_org_game(
     record["siteUrl"] = site_url
     record["siteThinkTime"] = site_think_time
     record["siteTelemetryBlocked"] = block_telemetry
+    record["openingTopK"] = opening_top_k
+    record["openingIndex"] = opening_index
     if checkpoint is not None:
         record["checkpoint"] = checkpoint_value
         record["cPuct"] = c_puct
@@ -634,6 +651,15 @@ def main() -> None:
     parser.add_argument("--site-url", default=DOTSANDBOXES_ORG_URL)
     parser.add_argument("--site-think-time", type=float, default=DEFAULT_SITE_THINK_TIME)
     parser.add_argument(
+        "--opening-top-k",
+        type=int,
+        default=1,
+        help=(
+            "Sweep EpsilonZero's first controlled move across the top K root "
+            "visit-count candidates. Default 1 keeps eval deterministic."
+        ),
+    )
+    parser.add_argument(
         "--allow-site-telemetry",
         action="store_true",
         help="Allow dotsandboxes.org log/high-score/analytics requests instead of blocking them.",
@@ -678,6 +704,8 @@ def main() -> None:
         raise SystemExit("--record-scoring-pause and --record-final-pause must be non-negative")
     if args.site_think_time < 0:
         raise SystemExit("--site-think-time must be non-negative")
+    if args.opening_top_k < 1:
+        raise SystemExit("--opening-top-k must be at least 1")
     validate_dotsandboxes_org_board_size(rows=args.rows, cols=args.cols)
 
     recording = None
@@ -710,6 +738,7 @@ def main() -> None:
         site_url=args.site_url,
         site_think_time=args.site_think_time,
         block_telemetry=not args.allow_site_telemetry,
+        opening_top_k=args.opening_top_k,
         recording=recording,
     )
     write_jsonl(records, args.out)

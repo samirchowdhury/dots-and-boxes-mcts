@@ -1106,12 +1106,14 @@ browser-backed dotsandboxes.org match with an equal player-side split:
 
 ```bash
 uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
-  --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
-  --games 50 \
+  --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter021-pure-restart-sims2000.npz \
+  --games 8 \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --out runs/dotsandboxes-org/stage-4/iter016-network-guided-sims2000-vs-dotsandboxes-org-4x4-games50.jsonl
+  --site-think-time 0.1 \
+  --opening-top-k 4 \
+  --out runs/dotsandboxes-org/stage-4/iter021-network-guided-sims2000-vs-dotsandboxes-org-4x4-games10-think0p1.jsonl
 ```
 
 Observed result for `iter016` against the previous live PAPG benchmark:

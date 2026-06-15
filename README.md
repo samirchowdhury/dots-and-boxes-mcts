@@ -71,7 +71,7 @@ Each command prints win rate and average score margin. Observe that deeper searc
 
 ### Playing Against an External Bot
 
-Now that we have a bot with a non-random strategy, we can meaningfully try to play against other bots. For dotsandboxes.org evaluation, use the dedicated Chrome-backed runner:
+Now that we have a bot with a non-random strategy, we can meaningfully try to play against other bots. The bot at [dotsandboxes.org](https://dotsandboxes.org/) is a powerful opponent, and its game engine runs client side so we can use it for evaluation without spamming the server:
 
 ```bash
 uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
@@ -81,61 +81,29 @@ uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --out runs/dotsandboxes-org/stage-2/mcts-2000-vs-dotsandboxes-org-4x4.jsonl
 ```
 
-It drives a real Chrome page, plays through dotsandboxes.org's client-side
+The runner drives a real Chrome page, plays through dotsandboxes.org's client-side
 engine, blocks the site's log/high-score/analytics requests by default, and
-records ordered moves from the page's game code. Without `--checkpoint`, it uses
-fast Numba UCT MCTS by default; pass `--backend python` to use the readable
-reference implementation.
+records ordered moves from the page's game code.
 
 See `DOTSANDBOXES_ORG_EXPERIMENTS.md` for the folder convention and extra
 dotsandboxes.org notes.
 
-For a broader inspection routine, see `LEARNING_CHECKLIST.md`.
+## Stage 3: Training EpsilonZero
 
-## Stage 3 Training Examples
+EpsilonZero is the name for our tiny AlphaZero-inspired bot. Let's recall the AlphaZero algorithm:
 
-Build a tiny replayable MCTS batch, then convert its MCTS decisions into
-AlphaZero-style policy/value examples:
+1. Initialize an untrained network.
+2. Start a game.
+3. At each time step `t` of the game, perform MCTS simulations.
+    - For each simulation, perform network-guided search.
+        - In the selection phase, we start at the root `s_t` of the game tree and select children (using the statistics of the tree) until a leaf node is reached.
+        - The network runs an "evaluate and expand" step by taking the leaf node `s_L` as input, generating a policy vector `p` and a value scalar `v`, and initializing child nodes with prior probabilities from the policy vector.
+        - The visit counts and values are updated along the traversed path using the value `v`.
+        - The next simulation starts again from the root and may now traverse into the newly initialized children.
+    - After all simulations are complete, AlphaZero selects a move based on the updated tree statistics. The normalized visit counts from the root `s_t` are saved as a policy target `π_t` for later.
 
-```bash
-uv run python -m dots_boxes_mcts.mcts_vs_random \
-  --backend numba \
-  --games 2 \
-  --rows 3 \
-  --cols 3 \
-  --simulations 8 \
-  --seed 30 \
-  --out runs/stage-3-tiny-mcts.jsonl
-
-uv run python -m dots_boxes_mcts.train \
-  runs/stage-3-tiny-mcts.jsonl \
-  --limit 3 \
-  --preview \
-  --out runs/stage-3-tiny-examples.jsonl
-```
-
-Each example includes the decision state, the MCTS visit-count policy target,
-the final score-margin value target from the decision player's perspective, and
-a small encoding summary for inspection.
-
-To verify that the learning pipeline can fit a tiny batch, run the MLX
-residual-conv overfit scaffold:
-
-```bash
-uv run python -m dots_boxes_mcts.train \
-  runs/stage-3.1/debug-mcts-vs-random-10.jsonl \
-  --limit 20 \
-  --overfit-epochs 1000 \
-  --learning-rate 0.001 \
-  --hidden-size 64 \
-  --residual-blocks 2 \
-  --diagnostics-every 250 \
-  --mlx-device gpu \
-  --checkpoint-out runs/stage-3.1/tiny-overfit-mlx.npz
-```
-
-On Apple Silicon, `--mlx-device gpu` uses Metal. Use `--mlx-device cpu` when you
-want the smallest deterministic smoke test.
+4. At the end of each game, we get a score `z_t` for each `s_t` (win or loss from the perspective of the player to move at that state). Here `s_t` is the state we had at time step `t`. The network parameters `θ` are updated so that `p_θ(s_t)->π_t` and `v_θ(s_t)->z_t`.
+5. Repeat steps 2-4.
 
 ## Stage 3.2 MCTS Self-Play
 

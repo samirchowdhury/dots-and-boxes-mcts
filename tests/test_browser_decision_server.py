@@ -4,8 +4,13 @@ import pytest
 
 from dots_boxes_mcts.fast_mcts import FastUCTMCTS, NUMBA_IMPORT_ERROR
 from dots_boxes_mcts.game import legal_moves, new_game
-from dots_boxes_mcts.mcts import UCTMCTS
-from dots_boxes_mcts.browser_decision_server import bot_name, decision_response, searcher_from_payload
+from dots_boxes_mcts.mcts import SearchResult, SearchStats, UCTMCTS
+from dots_boxes_mcts.browser_decision_server import (
+    bot_name,
+    decision_response,
+    searcher_from_payload,
+    select_eval_move,
+)
 
 
 def test_decision_response_returns_uct_move_for_nonterminal_state() -> None:
@@ -26,6 +31,7 @@ def test_decision_response_returns_uct_move_for_nonterminal_state() -> None:
     assert response["terminal"] is False
     assert response["move"] in legal_moves(new_game(rows=2, cols=2))
     assert response["decision"]["turn"] == 0
+    assert response["decision"]["moveSelection"] == "max_visit"
 
 
 def test_decision_response_syncs_opponent_first_when_model_is_second() -> None:
@@ -48,6 +54,29 @@ def test_decision_response_syncs_opponent_first_when_model_is_second() -> None:
     assert response["terminal"] is False
     assert response["decision"]["player"] == 1
     assert response["decision"]["ourPlayer"] == 1
+    assert response["decision"]["controlledDecisionTurn"] == 1
+
+
+def test_decision_response_uses_controlled_decision_turn_for_opening_sweep() -> None:
+    if NUMBA_IMPORT_ERROR is not None:
+        pytest.skip("Numba is not installed")
+
+    payload = {
+        "rows": 2,
+        "cols": 2,
+        "simulations": 1,
+        "seed": 1,
+        "our_player": 1,
+        "moves": [],
+        "drawn_edges": ["h:0:0"],
+        "decisions_played": 0,
+        "opening_top_k": 2,
+    }
+
+    response = decision_response(payload)
+
+    assert response["decision"]["controlledDecisionTurn"] == 0
+    assert response["decision"]["openingTopK"] == 2
 
 
 def test_decision_response_writes_terminal_record(tmp_path) -> None:
@@ -129,3 +158,48 @@ def test_searcher_from_payload_can_use_python_mcts() -> None:
     )
 
     assert isinstance(searcher, UCTMCTS)
+
+
+def test_select_eval_move_sweeps_top_k_only_on_first_controlled_move() -> None:
+    result = SearchResult(
+        move="best",
+        simulations=10,
+        root_player=0,
+        stats=[
+            SearchStats(move="best", visits=9, mean_value=0.5),
+            SearchStats(move="explore", visits=1, mean_value=0.0),
+        ],
+    )
+
+    assert select_eval_move(
+        result=result,
+        turn=0,
+        opening_top_k=2,
+        opening_index=1,
+    ) == ("explore", "opening_top_k")
+    assert select_eval_move(
+        result=result,
+        turn=1,
+        opening_top_k=2,
+        opening_index=1,
+    ) == ("best", "max_visit")
+
+
+def test_select_eval_move_wraps_opening_index_through_top_k() -> None:
+    result = SearchResult(
+        move="a",
+        simulations=10,
+        root_player=0,
+        stats=[
+            SearchStats(move="a", visits=5, mean_value=0.5),
+            SearchStats(move="b", visits=4, mean_value=0.4),
+            SearchStats(move="c", visits=1, mean_value=0.0),
+        ],
+    )
+
+    assert select_eval_move(
+        result=result,
+        turn=0,
+        opening_top_k=2,
+        opening_index=3,
+    ) == ("b", "opening_top_k")

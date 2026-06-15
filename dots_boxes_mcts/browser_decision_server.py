@@ -71,19 +71,52 @@ def decision_response(payload: dict[str, Any]) -> dict:
         seed=int(payload["seed"]) + len(moves),
     )
     result = searcher.search(state)
+    decision_turn = int(payload.get("decisions_played", len(moves)))
+    move, move_selection = select_eval_move(
+        result=result,
+        turn=decision_turn,
+        opening_top_k=int(payload.get("opening_top_k", 1)),
+        opening_index=int(payload.get("opening_index", 0)),
+    )
+    search_payload = result_payload(result)
     return {
         "moves": moves,
         "terminal": False,
-        "move": result.move,
-        "search": result_payload(result),
+        "move": move,
+        "search": search_payload,
         "decision": {
             "turn": len(moves),
             "player": state.current_player,
             "ourPlayer": our_player,
             "state": state_snapshot(state),
-            "search": result_payload(result),
+            "search": search_payload,
+            "selectedMove": move,
+            "searchPreferredMove": result.move,
+            "moveSelection": move_selection,
+            "openingTopK": int(payload.get("opening_top_k", 1)),
+            "openingIndex": int(payload.get("opening_index", 0)),
+            "controlledDecisionTurn": decision_turn,
         },
     }
+
+
+def select_eval_move(
+    *,
+    result,
+    turn: int,
+    opening_top_k: int = 1,
+    opening_index: int = 0,
+) -> tuple[str, str]:
+    if opening_top_k < 1:
+        raise ValueError("opening_top_k must be at least 1")
+    if opening_index < 0:
+        raise ValueError("opening_index must be non-negative")
+    if turn != 0 or opening_top_k == 1:
+        return result.move, "max_visit"
+    candidates = [stat.move for stat in result.stats[:opening_top_k] if stat.visits > 0]
+    if not candidates:
+        return result.move, "max_visit"
+    return candidates[opening_index % len(candidates)], "opening_top_k"
 
 
 def write_record_response(
