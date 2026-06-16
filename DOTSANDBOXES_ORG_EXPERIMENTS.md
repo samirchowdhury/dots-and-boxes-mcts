@@ -16,7 +16,7 @@ Captured games live under `runs/dotsandboxes-org/`, grouped by checklist stage:
 - `runs/dotsandboxes-org/stage-1/` for random/manual baselines.
 - `runs/dotsandboxes-org/stage-2/` for plain UCT MCTS games.
 - `runs/dotsandboxes-org/stage-3/` for stronger MCTS variants.
-- `runs/dotsandboxes-org/stage-4/` for AlphaZero-style experiments.
+- `runs/dotsandboxes-org/ez-flywheel/` for AlphaZero-style experiments.
 
 The folders are tracked, but captured `.jsonl` games stay ignored by git.
 
@@ -59,12 +59,12 @@ For checkpoint evaluation with an equal player split:
 
 ```bash
 uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
-  --checkpoint runs/stage-4/mlx-resconv-policy-value-4x4-iter016-pure-restart-sims2000.npz \
+  --checkpoint runs/ez-flywheel/ez-policy-value-4x4-iter016-sims2000.npz \
   --games 10 \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --out runs/dotsandboxes-org/stage-4/iter016-network-guided-sims2000-vs-dotsandboxes-org-4x4.jsonl
+  --out runs/dotsandboxes-org/ez-flywheel/iter016-network-guided-sims2000-vs-dotsandboxes-org-4x4.jsonl
 ```
 
 The page's built-in engine uses the site's "Thinking Time" setting. The runner

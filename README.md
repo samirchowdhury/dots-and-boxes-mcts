@@ -88,7 +88,9 @@ records ordered moves from the page's game code.
 See `DOTSANDBOXES_ORG_EXPERIMENTS.md` for the folder convention and extra
 dotsandboxes.org notes.
 
-## Stage 3: Training EpsilonZero
+## Stage 3: EpsilonZero
+
+### Algorithm
 
 EpsilonZero is the name for our tiny AlphaZero-inspired bot. Let's recall the AlphaZero algorithm:
 
@@ -105,82 +107,53 @@ EpsilonZero is the name for our tiny AlphaZero-inspired bot. Let's recall the Al
 4. At the end of each game, we get a score `z_t` for each `s_t` (final outcome from the perspective of the player to move at that state). Here `s_t` is the state we had at time step `t`. The network parameters `θ` are updated so that `p_θ(s_t)->π_t` and `v_θ(s_t)->z_t`.
 5. Repeat steps 2-4.
 
-## Stage 3.2 MCTS Self-Play
+### Training
 
-Generate true 4x4-dot MCTS-vs-MCTS data for both players:
+- [ ] Initialize a random policy/value network:
 
 ```bash
-uv run python -m dots_boxes_mcts.az_self_play \
-  --games 100 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --seed 1001 \
-  --out runs/stage-3.2/self-play-4x4-100.jsonl
-
-uv run python -m dots_boxes_mcts.train \
-  runs/stage-3.2/self-play-4x4-100.jsonl \
-  --out runs/stage-3.2/examples-4x4-100.jsonl
+uv run python -m dots_boxes_mcts.ez_flywheel init-state \
+  --random-checkpoint \
+  --random-seed 1
 ```
 
-For 4x4-dot boards, each game has 24 moves, so the example count should be
-`games * 24`.
-
-## Stage 3.3 MLX Checkpoint Training
-
-Train a policy/value checkpoint from serialized Stage 3.2 examples:
+- [ ] Run a few EpsilonZero flywheel iterations.
 
 ```bash
-uv run python -m dots_boxes_mcts.train \
-  runs/stage-3.2/examples-4x4-1000.jsonl \
-  --train-epochs 20 \
-  --batch-size 256 \
-  --learning-rate 0.001 \
-  --hidden-size 64 \
-  --residual-blocks 4 \
-  --validation-fraction 0.1 \
-  --diagnostics-every 5 \
+uv run python -m dots_boxes_mcts.ez_flywheel loop \
+  --iterations 3 \
+  --min-win-rate 0.55 \
+  --min-average-score-margin 0.0
+```
+
+Or run whole iterations until a wall-clock budget is reached:
+
+```bash
+uv run python -m dots_boxes_mcts.ez_flywheel loop \
+  --duration 12h \
+  --min-win-rate 0.55 \
+  --min-average-score-margin 0.0
+```
+
+The flywheel performs self-play games, trains the network, and promotes checkpoints if they can beat the current champion by a sufficient margin.
+It tracks results and training state in a small ledger under `runs/ez-flywheel/`.
+Rerunning the command will automatically resume self-play and training from the current champion.
+
+### Evaluation
+
+Evaluate a trained EpsilonZero checkpoint against the browser bot at
+[dotsandboxes.org](https://dotsandboxes.org/):
+
+```bash
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
+  --checkpoint runs/ez-flywheel/ez-policy-value-4x4-iter003-sims2000.npz \
+  --games 10 \
+  --simulations 2000 \
   --mlx-device gpu \
-  --diagnostics-out runs/stage-3.3/mlx-resconv-policy-value-4x4-1000-diagnostics.jsonl \
-  --checkpoint-out runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
+  --alternate-players \
+  --out runs/dotsandboxes-org/ez-flywheel/iter003-vs-dotsandboxes-org-4x4.jsonl
 ```
 
-## Stage 3.4+ Network-Guided Search
-
-Run PUCT-style network-guided MCTS from the initial position:
-
-```bash
-uv run python -m dots_boxes_mcts.az_mcts \
-  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --mlx-device gpu
-```
-
-Generate guided self-play for the next flywheel iteration:
-
-```bash
-uv run python -m dots_boxes_mcts.az_guided_self_play \
-  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --iteration 1 \
-  --games 100 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --seed 5001 \
-  --root-dirichlet-alpha 0.3 \
-  --root-exploration-fraction 0.25 \
-  --mlx-device gpu \
-  --debug
-```
-
-By default this starts a fresh search tree at each move, matching the simplified
-AlphaZero pseudocode. Add `--enable-tree-reuse` to retain the played child
-subtree between moves, AlphaGo Zero-style, while still running a full fresh
-simulation budget at each new root.
-
-By default this writes a parameter-derived JSONL path such as
-`runs/stage-3.6/guided-self-play-4x4-iter001-games100-sims25.jsonl`, plus a
-`.meta.json` sidecar with the full run settings. Pass `--out` only when you
-want a custom filename.
+Use the latest promoted checkpoint from `runs/ez-flywheel/`. `--alternate-players`
+splits games across first and second player, which matters a lot in Dots and
+Boxes.

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,16 +15,17 @@ from dots_boxes_mcts.az_checkpoint_eval import summarize_checkpoint_match_record
 from dots_boxes_mcts.encoding import CHANNEL_NAMES, action_ids, board_shape
 from dots_boxes_mcts.train import MlxPolicyValueNetwork
 
-STAGE4_DIR = Path("runs/stage-4")
-STATE_FILENAME = "stage4-state.json"
-HISTORY_FILENAME = "stage4-history.jsonl"
+EZ_FLYWHEEL_DIR = Path("runs/ez-flywheel")
+STATE_FILENAME = "ez-flywheel-state.json"
+HISTORY_FILENAME = "ez-flywheel-history.jsonl"
 DEFAULT_TACTICAL_SUITE = Path("runs/stage-3.8/papg-stage3.6-unsafe-opener-positions.jsonl")
-DEFAULT_STAGE4_SIMULATIONS = 2_000
+DEFAULT_EZ_FLYWHEEL_SIMULATIONS = 2_000
 DEFAULT_EVALUATOR_CACHE_ENTRIES = 500_000
+_DURATION_PART_RE = re.compile(r"(?P<value>\d+(?:\.\d+)?)(?P<unit>[smhd])")
 
 
 @dataclass(frozen=True)
-class Stage4Paths:
+class EzFlywheelPaths:
     games: Path
     examples: Path
     checkpoint: Path
@@ -30,17 +33,17 @@ class Stage4Paths:
     strategic_summary: Path
     unsafe_positions: Path
     tactical_probe: Path
-    eval_previous: Path
+    eval_champion: Path
 
 
 @dataclass(frozen=True)
-class Stage4Config:
+class EzFlywheelConfig:
     iteration: int
-    stage_dir: Path = STAGE4_DIR
+    run_dir: Path = EZ_FLYWHEEL_DIR
     games: int = 25
     rows: int = 4
     cols: int = 4
-    simulations: int = DEFAULT_STAGE4_SIMULATIONS
+    simulations: int = DEFAULT_EZ_FLYWHEEL_SIMULATIONS
     seed: int | None = None
     train_epochs: int = 10
     batch_size: int = 256
@@ -52,11 +55,12 @@ class Stage4Config:
     mlx_device: str = "gpu"
     debug: bool = True
     init_checkpoint: Path | None = None
-    tactical_suite: Path | None = DEFAULT_TACTICAL_SUITE
+    run_strategic_eval: bool = False
+    tactical_suite: Path | None = None
     tactical_probe_seed: int = 1
-    eval_previous_games: int = 20
-    eval_previous_simulations: int = 2000
-    eval_previous_seed: int | None = None
+    eval_champion_games: int = 20
+    eval_champion_simulations: int = 2000
+    eval_champion_seed: int | None = None
     c_puct: float = 1.5
     root_dirichlet_alpha: float = 0.3
     root_exploration_fraction: float = 0.25
@@ -66,14 +70,14 @@ class Stage4Config:
 
 
 @dataclass(frozen=True)
-class Stage4State:
+class EzFlywheelState:
     next_iteration: int = 1
     champion_checkpoint: Path | None = None
     latest_candidate_checkpoint: Path | None = None
     last_evaluation: dict[str, Any] | None = None
 
     @classmethod
-    def from_json(cls, payload: dict[str, Any]) -> "Stage4State":
+    def from_json(cls, payload: dict[str, Any]) -> "EzFlywheelState":
         return cls(
             next_iteration=int(payload.get("nextIteration", 1)),
             champion_checkpoint=optional_path(payload.get("championCheckpoint")),
@@ -113,12 +117,36 @@ def default_eval_seed(iteration: int) -> int:
     return 43_001 + (iteration - 1) * 2_000
 
 
-def stage4_state_path(stage_dir: Path = STAGE4_DIR) -> Path:
-    return stage_dir / STATE_FILENAME
+def parse_duration_seconds(text: str | None) -> float | None:
+    if text is None:
+        return None
+    value = text.strip().lower()
+    if not value:
+        raise ValueError("Duration cannot be empty.")
+    if value.replace(".", "", 1).isdigit():
+        seconds = float(value)
+    else:
+        position = 0
+        seconds = 0.0
+        multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86_400}
+        for match in _DURATION_PART_RE.finditer(value):
+            if match.start() != position:
+                raise ValueError(f"Invalid duration: {text!r}. Use forms like 30m, 12h, or 1h30m.")
+            seconds += float(match.group("value")) * multipliers[match.group("unit")]
+            position = match.end()
+        if position != len(value):
+            raise ValueError(f"Invalid duration: {text!r}. Use forms like 30m, 12h, or 1h30m.")
+    if seconds <= 0:
+        raise ValueError("--duration must be greater than zero.")
+    return seconds
 
 
-def stage4_history_path(stage_dir: Path = STAGE4_DIR) -> Path:
-    return stage_dir / HISTORY_FILENAME
+def ez_flywheel_state_path(run_dir: Path = EZ_FLYWHEEL_DIR) -> Path:
+    return run_dir / STATE_FILENAME
+
+
+def ez_flywheel_history_path(run_dir: Path = EZ_FLYWHEEL_DIR) -> Path:
+    return run_dir / HISTORY_FILENAME
 
 
 def random_checkpoint_path(
@@ -126,9 +154,9 @@ def random_checkpoint_path(
     rows: int = 4,
     cols: int = 4,
     seed: int = 1,
-    stage_dir: Path = STAGE4_DIR,
+    run_dir: Path = EZ_FLYWHEEL_DIR,
 ) -> Path:
-    return stage_dir / f"stage4-random-policy-value-{rows}x{cols}-seed{seed}.npz"
+    return run_dir / f"ez-random-policy-value-{rows}x{cols}-seed{seed}.npz"
 
 
 def create_random_checkpoint(
@@ -161,21 +189,21 @@ def create_random_checkpoint(
     return path
 
 
-def load_state(stage_dir: Path = STAGE4_DIR) -> Stage4State:
-    path = stage4_state_path(stage_dir)
+def load_state(run_dir: Path = EZ_FLYWHEEL_DIR) -> EzFlywheelState:
+    path = ez_flywheel_state_path(run_dir)
     if not path.exists():
-        return Stage4State()
-    return Stage4State.from_json(json.loads(path.read_text(encoding="utf8")))
+        return EzFlywheelState()
+    return EzFlywheelState.from_json(json.loads(path.read_text(encoding="utf8")))
 
 
-def save_state(state: Stage4State, stage_dir: Path = STAGE4_DIR) -> None:
-    path = stage4_state_path(stage_dir)
+def save_state(state: EzFlywheelState, run_dir: Path = EZ_FLYWHEEL_DIR) -> None:
+    path = ez_flywheel_state_path(run_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state.to_json(), indent=2, sort_keys=True) + "\n", encoding="utf8")
 
 
-def append_history(event: dict[str, Any], stage_dir: Path = STAGE4_DIR) -> None:
-    path = stage4_history_path(stage_dir)
+def append_history(event: dict[str, Any], run_dir: Path = EZ_FLYWHEEL_DIR) -> None:
+    path = ez_flywheel_history_path(run_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf8") as handle:
         handle.write(
@@ -190,50 +218,50 @@ def append_history(event: dict[str, Any], stage_dir: Path = STAGE4_DIR) -> None:
         )
 
 
-def stage4_paths(config: Stage4Config) -> Stage4Paths:
+def ez_flywheel_paths(config: EzFlywheelConfig) -> EzFlywheelPaths:
     label = iter_label(config.iteration)
     board = f"{config.rows}x{config.cols}"
     suffix = f"{board}-{label}-games{config.games}-sims{config.simulations}"
     checkpoint = (
-        config.stage_dir
-        / f"mlx-resconv-policy-value-{board}-{label}-pure-restart-sims{config.simulations}.npz"
+        config.run_dir
+        / f"ez-policy-value-{board}-{label}-sims{config.simulations}.npz"
     )
-    return Stage4Paths(
-        games=config.stage_dir / f"stage4-self-play-{suffix}.jsonl",
-        examples=config.stage_dir / f"stage4-examples-{suffix}.jsonl",
+    return EzFlywheelPaths(
+        games=config.run_dir / f"ez-self-play-{suffix}.jsonl",
+        examples=config.run_dir / f"ez-examples-{suffix}.jsonl",
         checkpoint=checkpoint,
         diagnostics=checkpoint.with_name(f"{checkpoint.stem}-diagnostics.jsonl"),
-        strategic_summary=config.stage_dir / f"{label}-strategic-summary.json",
-        unsafe_positions=config.stage_dir / f"{label}-unsafe-opener-positions.jsonl",
-        tactical_probe=config.stage_dir / f"{label}-tactical-probe",
-        eval_previous=config.stage_dir
-        / f"{label}-vs-previous-stage4-sims{config.eval_previous_simulations}.jsonl",
+        strategic_summary=config.run_dir / f"{label}-strategic-summary.json",
+        unsafe_positions=config.run_dir / f"{label}-unsafe-opener-positions.jsonl",
+        tactical_probe=config.run_dir / f"{label}-tactical-probe",
+        eval_champion=config.run_dir
+        / f"{label}-vs-champion-sims{config.eval_champion_simulations}.jsonl",
     )
 
 
-def current_training_checkpoint(config: Stage4Config, state: Stage4State) -> Path | None:
+def current_training_checkpoint(config: EzFlywheelConfig, state: EzFlywheelState) -> Path | None:
     if config.init_checkpoint is not None:
         return config.init_checkpoint
     return state.latest_candidate_checkpoint or state.champion_checkpoint
 
 
-def training_init_checkpoint(config: Stage4Config, state: Stage4State) -> Path | None:
+def training_init_checkpoint(config: EzFlywheelConfig, state: EzFlywheelState) -> Path | None:
     return current_training_checkpoint(config, state)
 
 
-def self_play_checkpoint(config: Stage4Config, state: Stage4State) -> Path | None:
+def self_play_checkpoint(config: EzFlywheelConfig, state: EzFlywheelState) -> Path | None:
     return current_training_checkpoint(config, state)
 
 
-def command_plan(config: Stage4Config, state: Stage4State | None = None) -> list[list[str]]:
-    state = state or load_state(config.stage_dir)
-    paths = stage4_paths(config)
+def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None) -> list[list[str]]:
+    state = state or load_state(config.run_dir)
+    paths = ez_flywheel_paths(config)
     seed = config.seed or default_seed(config.iteration)
     checkpoint = self_play_checkpoint(config, state)
     if checkpoint is None:
         raise ValueError(
-            "Stage 4 network-guided self-play requires a checkpoint. "
-            "Initialize Stage 4 with --champion-checkpoint or pass --init-checkpoint."
+            "EpsilonZero network-guided self-play requires a checkpoint. "
+            "Initialize EpsilonZero with --champion-checkpoint or pass --init-checkpoint."
         )
     commands: list[list[str]] = [
         [
@@ -315,18 +343,19 @@ def command_plan(config: Stage4Config, state: Stage4State | None = None) -> list
         train[4:4] = ["--init-checkpoint", str(init)]
     commands.append(train)
 
-    commands.append(
-        [
-            sys.executable,
-            "-m",
-            "dots_boxes_mcts.strategic_eval",
-            str(paths.games),
-            "--summary-out",
-            str(paths.strategic_summary),
-            "--suite-out",
-            str(paths.unsafe_positions),
-        ]
-    )
+    if config.run_strategic_eval:
+        commands.append(
+            [
+                sys.executable,
+                "-m",
+                "dots_boxes_mcts.strategic_eval",
+                str(paths.games),
+                "--summary-out",
+                str(paths.strategic_summary),
+                "--suite-out",
+                str(paths.unsafe_positions),
+            ]
+        )
 
     if config.tactical_suite is not None:
         commands.append(
@@ -362,27 +391,27 @@ def command_plan(config: Stage4Config, state: Stage4State | None = None) -> list
                 "--baseline",
                 str(state.champion_checkpoint),
                 "--games",
-                str(config.eval_previous_games),
+                str(config.eval_champion_games),
                 "--rows",
                 str(config.rows),
                 "--cols",
                 str(config.cols),
                 "--simulations",
-                str(config.eval_previous_simulations),
+                str(config.eval_champion_simulations),
                 "--seed",
-                str(config.eval_previous_seed or default_eval_seed(config.iteration)),
+                str(config.eval_champion_seed or default_eval_seed(config.iteration)),
                 "--mlx-device",
                 config.mlx_device,
                 "--evaluator-cache-entries",
                 str(config.evaluator_cache_entries),
                 "--out",
-                str(paths.eval_previous),
+                str(paths.eval_champion),
             ]
         )
     return commands
 
 
-def validate_inputs(config: Stage4Config, state: Stage4State) -> None:
+def validate_inputs(config: EzFlywheelConfig, state: EzFlywheelState) -> None:
     missing: list[Path] = []
     init = training_init_checkpoint(config, state)
     if init is not None and not init.exists():
@@ -390,7 +419,7 @@ def validate_inputs(config: Stage4Config, state: Stage4State) -> None:
     self_play = self_play_checkpoint(config, state)
     if self_play is None:
         raise FileNotFoundError(
-            "Missing required Stage 4 input: a network-guided self-play checkpoint. "
+            "Missing required EpsilonZero input: a network-guided self-play checkpoint. "
             "Run init-state with --champion-checkpoint or pass --init-checkpoint."
         )
     if not self_play.exists():
@@ -399,10 +428,10 @@ def validate_inputs(config: Stage4Config, state: Stage4State) -> None:
         missing.append(config.tactical_suite)
     if missing:
         paths = "\n".join(f"- {path}" for path in missing)
-        raise FileNotFoundError(f"Missing required Stage 4 input(s):\n{paths}")
+        raise FileNotFoundError(f"Missing required EpsilonZero input(s):\n{paths}")
 
 
-def validate_outputs(paths: Stage4Paths, overwrite: bool) -> None:
+def validate_outputs(config: EzFlywheelConfig, paths: EzFlywheelPaths, overwrite: bool) -> None:
     if overwrite:
         return
     outputs = [
@@ -411,17 +440,17 @@ def validate_outputs(paths: Stage4Paths, overwrite: bool) -> None:
         paths.examples,
         paths.checkpoint,
         paths.diagnostics,
-        paths.strategic_summary,
-        paths.unsafe_positions,
-        paths.eval_previous,
+        paths.eval_champion,
     ]
+    if config.run_strategic_eval:
+        outputs.extend([paths.strategic_summary, paths.unsafe_positions])
     existing = [path for path in outputs if path.exists()]
-    if paths.tactical_probe.exists():
+    if config.tactical_suite is not None and paths.tactical_probe.exists():
         existing.append(paths.tactical_probe)
     if existing:
         text = "\n".join(f"- {path}" for path in existing)
         raise FileExistsError(
-            "Refusing to overwrite existing Stage 4 output(s). "
+            "Refusing to overwrite existing EpsilonZero flywheel output(s). "
             f"Pass --overwrite to replace them:\n{text}"
         )
 
@@ -460,25 +489,29 @@ def read_evaluation_summary(path: Path) -> dict[str, Any] | None:
     return summarize_checkpoint_match_records(records)
 
 
-def record_completed_iteration(config: Stage4Config) -> Stage4State:
-    paths = stage4_paths(config)
-    state = load_state(config.stage_dir)
+def record_completed_iteration(config: EzFlywheelConfig) -> EzFlywheelState:
+    paths = ez_flywheel_paths(config)
+    state = load_state(config.run_dir)
     evaluation = {
         "iteration": config.iteration,
         "candidateCheckpoint": str(paths.checkpoint),
-        "strategicSummary": read_json(paths.strategic_summary),
-        "tacticalProbe": read_json(paths.tactical_probe / "summary.json"),
-        "previousStage4Summary": read_evaluation_summary(paths.eval_previous),
+        "strategicSummary": read_json(paths.strategic_summary)
+        if config.run_strategic_eval
+        else None,
+        "tacticalProbe": read_json(paths.tactical_probe / "summary.json")
+        if config.tactical_suite is not None
+        else None,
+        "championSummary": read_evaluation_summary(paths.eval_champion),
         "decision": "pending",
         "promoted": None,
     }
-    next_state = Stage4State(
+    next_state = EzFlywheelState(
         next_iteration=max(state.next_iteration, config.iteration + 1),
         champion_checkpoint=state.champion_checkpoint,
         latest_candidate_checkpoint=paths.checkpoint,
         last_evaluation=evaluation,
     )
-    save_state(next_state, config.stage_dir)
+    save_state(next_state, config.run_dir)
     append_history(
         {
             "event": "iteration_completed",
@@ -489,25 +522,29 @@ def record_completed_iteration(config: Stage4Config) -> Stage4State:
                 "examples": str(paths.examples),
                 "checkpoint": str(paths.checkpoint),
                 "diagnostics": str(paths.diagnostics),
-                "strategicSummary": str(paths.strategic_summary),
-                "unsafePositions": str(paths.unsafe_positions),
-                "tacticalProbe": str(paths.tactical_probe),
-                "evalPrevious": str(paths.eval_previous),
+                "strategicSummary": str(paths.strategic_summary)
+                if config.run_strategic_eval
+                else None,
+                "unsafePositions": str(paths.unsafe_positions)
+                if config.run_strategic_eval
+                else None,
+                "tacticalProbe": str(paths.tactical_probe) if config.tactical_suite else None,
+                "evalChampion": str(paths.eval_champion),
             },
             "evaluation": evaluation,
         },
-        config.stage_dir,
+        config.run_dir,
     )
     return next_state
 
 
-def promote_iteration(iteration: int, stage_dir: Path, reason: str | None = None) -> Stage4State:
-    state = load_state(stage_dir)
+def promote_iteration(iteration: int, run_dir: Path, reason: str | None = None) -> EzFlywheelState:
+    state = load_state(run_dir)
     candidate = state.latest_candidate_checkpoint
     if candidate is None:
-        candidate = stage4_paths(Stage4Config(iteration=iteration, stage_dir=stage_dir)).checkpoint
+        candidate = ez_flywheel_paths(EzFlywheelConfig(iteration=iteration, run_dir=run_dir)).checkpoint
     if not candidate.exists():
-        raise FileNotFoundError(f"Missing Stage 4 candidate checkpoint: {candidate}")
+        raise FileNotFoundError(f"Missing EpsilonZero candidate checkpoint: {candidate}")
     evaluation = state.last_evaluation or {
         "iteration": iteration,
         "candidateCheckpoint": str(candidate),
@@ -519,13 +556,13 @@ def promote_iteration(iteration: int, stage_dir: Path, reason: str | None = None
     }
     if reason:
         evaluation["reason"] = reason
-    next_state = Stage4State(
+    next_state = EzFlywheelState(
         next_iteration=max(state.next_iteration, iteration + 1),
         champion_checkpoint=candidate,
         latest_candidate_checkpoint=candidate,
         last_evaluation=evaluation,
     )
-    save_state(next_state, stage_dir)
+    save_state(next_state, run_dir)
     append_history(
         {
             "event": "candidate_promoted",
@@ -533,16 +570,16 @@ def promote_iteration(iteration: int, stage_dir: Path, reason: str | None = None
             "championCheckpoint": str(candidate),
             "evaluation": evaluation,
         },
-        stage_dir,
+        run_dir,
     )
     return next_state
 
 
-def reject_iteration(iteration: int, stage_dir: Path, reason: str | None = None) -> Stage4State:
-    state = load_state(stage_dir)
+def reject_iteration(iteration: int, run_dir: Path, reason: str | None = None) -> EzFlywheelState:
+    state = load_state(run_dir)
     candidate = state.latest_candidate_checkpoint
     if candidate is None:
-        candidate = stage4_paths(Stage4Config(iteration=iteration, stage_dir=stage_dir)).checkpoint
+        candidate = ez_flywheel_paths(EzFlywheelConfig(iteration=iteration, run_dir=run_dir)).checkpoint
     evaluation = state.last_evaluation or {
         "iteration": iteration,
         "candidateCheckpoint": str(candidate),
@@ -554,13 +591,13 @@ def reject_iteration(iteration: int, stage_dir: Path, reason: str | None = None)
     }
     if reason:
         evaluation["reason"] = reason
-    next_state = Stage4State(
+    next_state = EzFlywheelState(
         next_iteration=max(state.next_iteration, iteration + 1),
         champion_checkpoint=state.champion_checkpoint,
         latest_candidate_checkpoint=candidate,
         last_evaluation=evaluation,
     )
-    save_state(next_state, stage_dir)
+    save_state(next_state, run_dir)
     append_history(
         {
             "event": "candidate_rejected",
@@ -569,7 +606,7 @@ def reject_iteration(iteration: int, stage_dir: Path, reason: str | None = None)
             "candidateCheckpoint": str(candidate),
             "evaluation": evaluation,
         },
-        stage_dir,
+        run_dir,
     )
     return next_state
 
@@ -620,24 +657,24 @@ def unsafe_selection_rate(evaluation: dict[str, Any] | None, simulations: int) -
     return float(selected["unsafeOpenerSelectionRate"])
 
 
-def status_payload(stage_dir: Path) -> dict[str, Any]:
-    state = load_state(stage_dir)
+def status_payload(run_dir: Path) -> dict[str, Any]:
+    state = load_state(run_dir)
     return {
-        "stageDir": str(stage_dir),
+        "stageDir": str(run_dir),
         **state.to_json(),
     }
 
 
 def run_next_iteration(
-    config: Stage4Config,
-    state: Stage4State,
+    config: EzFlywheelConfig,
+    state: EzFlywheelState,
     *,
     dry_run: bool,
     overwrite: bool,
-) -> Stage4State | None:
-    paths = stage4_paths(config)
+) -> EzFlywheelState | None:
+    paths = ez_flywheel_paths(config)
     validate_inputs(config, state)
-    validate_outputs(paths, overwrite=overwrite or dry_run)
+    validate_outputs(config, paths, overwrite=overwrite or dry_run)
     commands = command_plan(config, state=state)
     run_commands(commands, dry_run=dry_run)
     if dry_run:
@@ -646,16 +683,28 @@ def run_next_iteration(
 
 
 def run_loop(args: argparse.Namespace) -> None:
-    if args.iterations < 1:
+    duration_seconds = parse_duration_seconds(args.duration)
+    if args.iterations is None and duration_seconds is None:
+        raise SystemExit("Pass --iterations or --duration.")
+    if args.iterations is not None and args.iterations < 1:
         raise SystemExit("--iterations must be at least 1")
     if not 0.0 <= args.min_win_rate <= 1.0:
         raise SystemExit("--min-win-rate must be in [0, 1]")
-    for loop_index in range(1, args.iterations + 1):
-        state = load_state(args.stage_dir)
+    started_at = time.monotonic()
+    deadline = None if duration_seconds is None else started_at + duration_seconds
+    loop_index = 0
+    while args.iterations is None or loop_index < args.iterations:
+        if deadline is not None and time.monotonic() >= deadline:
+            if loop_index == 0:
+                print("Duration elapsed before any EpsilonZero iteration started.", flush=True)
+            return
+        loop_index += 1
+        state = load_state(args.run_dir)
         iteration = state.next_iteration
         config = config_from_args(args, iteration=iteration)
+        loop_total = str(args.iterations) if args.iterations is not None else f"duration {args.duration}"
         print(
-            f"\nStage 4 loop iteration {loop_index}/{args.iterations}: iter{iteration:03d}",
+            f"\nEpsilonZero loop iteration {loop_index}/{loop_total}: iter{iteration:03d}",
             flush=True,
         )
         next_state = run_next_iteration(
@@ -665,14 +714,14 @@ def run_loop(args: argparse.Namespace) -> None:
             overwrite=args.overwrite,
         )
         if args.dry_run:
-            print("Dry-run loop stops after the next planned Stage 4 iteration.")
+            print("Dry-run loop stops after the next planned EpsilonZero iteration.")
             return
         if next_state is None:
-            raise RuntimeError("Completed iteration did not record Stage 4 state.")
+            raise RuntimeError("Completed iteration did not record EpsilonZero flywheel state.")
         evaluation = next_state.last_evaluation
         if evaluation is None:
             raise RuntimeError("Completed iteration did not record an evaluation.")
-        summary = evaluation.get("previousStage4Summary")
+        summary = evaluation.get("championSummary")
         if not isinstance(summary, dict):
             raise RuntimeError("Completed iteration did not record a champion-match summary.")
         promoted = should_promote(
@@ -686,26 +735,26 @@ def run_loop(args: argparse.Namespace) -> None:
             min_win_rate=args.min_win_rate,
             min_average_score_margin=args.min_average_score_margin,
         )
-        unsafe_rate = unsafe_selection_rate(evaluation, config.simulations)
-        unsafe_text = "unknown" if unsafe_rate is None else f"{unsafe_rate:.3f}"
-        print(
+        gate_text = (
             "Champion gate: "
             f"winRate={float(summary.get('winRate', 0.0)):.3f} "
-            f"averageScoreMargin={float(summary.get('averageScoreMargin', 0.0)):.3f} "
-            f"unsafeOpenerSelectionRate={unsafe_text}",
-            flush=True,
+            f"averageScoreMargin={float(summary.get('averageScoreMargin', 0.0)):.3f}"
         )
+        unsafe_rate = unsafe_selection_rate(evaluation, config.simulations)
+        if unsafe_rate is not None:
+            gate_text += f" unsafeOpenerSelectionRate={unsafe_rate:.3f}"
+        print(gate_text, flush=True)
         if promoted:
             promoted_state = promote_iteration(
                 iteration=iteration,
-                stage_dir=args.stage_dir,
+                run_dir=args.run_dir,
                 reason=reason,
             )
             print(f"Auto-promoted iteration {iteration}: {promoted_state.champion_checkpoint}")
         else:
             rejected_state = reject_iteration(
                 iteration=iteration,
-                stage_dir=args.stage_dir,
+                run_dir=args.run_dir,
                 reason=reason,
             )
             print(
@@ -718,7 +767,7 @@ def add_shared_next_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--games", type=int, default=25)
     parser.add_argument("--rows", type=int, default=4)
     parser.add_argument("--cols", type=int, default=4)
-    parser.add_argument("--simulations", type=int, default=DEFAULT_STAGE4_SIMULATIONS)
+    parser.add_argument("--simulations", type=int, default=DEFAULT_EZ_FLYWHEEL_SIMULATIONS)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--train-epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=256)
@@ -729,13 +778,21 @@ def add_shared_next_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--residual-blocks", type=int, default=4)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="gpu")
     parser.add_argument("--init-checkpoint", type=Path)
-    parser.add_argument("--stage-dir", type=Path, default=STAGE4_DIR)
-    parser.add_argument("--tactical-suite", type=Path, default=DEFAULT_TACTICAL_SUITE)
-    parser.add_argument("--no-tactical-probe", action="store_true")
+    parser.add_argument("--run-dir", type=Path, default=EZ_FLYWHEEL_DIR)
+    parser.add_argument(
+        "--strategic-eval",
+        action="store_true",
+        help="Also summarize avoidable box giveaways and write an unsafe-opener suite.",
+    )
+    parser.add_argument(
+        "--tactical-suite",
+        type=Path,
+        help="Optional unsafe-opener suite to probe with network-guided MCTS.",
+    )
     parser.add_argument("--tactical-probe-seed", type=int, default=1)
-    parser.add_argument("--eval-previous-games", type=int, default=20)
-    parser.add_argument("--eval-previous-simulations", type=int, default=2000)
-    parser.add_argument("--eval-previous-seed", type=int)
+    parser.add_argument("--eval-champion-games", type=int, default=20)
+    parser.add_argument("--eval-champion-simulations", type=int, default=2000)
+    parser.add_argument("--eval-champion-seed", type=int)
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--root-dirichlet-alpha", type=float, default=0.3)
     parser.add_argument("--root-exploration-fraction", type=float, default=0.25)
@@ -749,10 +806,10 @@ def add_shared_next_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--quiet", action="store_true")
 
 
-def config_from_args(args: argparse.Namespace, *, iteration: int) -> Stage4Config:
-    return Stage4Config(
+def config_from_args(args: argparse.Namespace, *, iteration: int) -> EzFlywheelConfig:
+    return EzFlywheelConfig(
         iteration=iteration,
-        stage_dir=args.stage_dir,
+        run_dir=args.run_dir,
         games=args.games,
         rows=args.rows,
         cols=args.cols,
@@ -768,11 +825,12 @@ def config_from_args(args: argparse.Namespace, *, iteration: int) -> Stage4Confi
         mlx_device=args.mlx_device,
         debug=not args.quiet,
         init_checkpoint=args.init_checkpoint,
-        tactical_suite=None if args.no_tactical_probe else args.tactical_suite,
+        run_strategic_eval=args.strategic_eval,
+        tactical_suite=args.tactical_suite,
         tactical_probe_seed=args.tactical_probe_seed,
-        eval_previous_games=args.eval_previous_games,
-        eval_previous_simulations=args.eval_previous_simulations,
-        eval_previous_seed=args.eval_previous_seed,
+        eval_champion_games=args.eval_champion_games,
+        eval_champion_simulations=args.eval_champion_simulations,
+        eval_champion_seed=args.eval_champion_seed,
         c_puct=args.c_puct,
         root_dirichlet_alpha=args.root_dirichlet_alpha,
         root_exploration_fraction=args.root_exploration_fraction,
@@ -783,19 +841,19 @@ def config_from_args(args: argparse.Namespace, *, iteration: int) -> Stage4Confi
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the independent Stage 4 pure-restart pipeline.")
+    parser = argparse.ArgumentParser(description="Run the independent EpsilonZero pure-restart pipeline.")
     subparsers = parser.add_subparsers(dest="command")
 
     status_parser = subparsers.add_parser("status")
-    status_parser.add_argument("--stage-dir", type=Path, default=STAGE4_DIR)
+    status_parser.add_argument("--run-dir", type=Path, default=EZ_FLYWHEEL_DIR)
 
     init_parser = subparsers.add_parser("init-state")
-    init_parser.add_argument("--stage-dir", type=Path, default=STAGE4_DIR)
+    init_parser.add_argument("--run-dir", type=Path, default=EZ_FLYWHEEL_DIR)
     init_parser.add_argument("--champion-checkpoint", type=Path)
     init_parser.add_argument(
         "--random-checkpoint",
         action="store_true",
-        help="Create and use a random Stage 4 policy/value checkpoint as the initial network.",
+        help="Create and use a random EpsilonZero policy/value checkpoint as the initial network.",
     )
     init_parser.add_argument("--rows", type=int, default=4)
     init_parser.add_argument("--cols", type=int, default=4)
@@ -814,7 +872,11 @@ def main() -> None:
 
     loop_parser = subparsers.add_parser("loop")
     add_shared_next_args(loop_parser)
-    loop_parser.add_argument("--iterations", type=int, required=True)
+    loop_parser.add_argument("--iterations", type=int)
+    loop_parser.add_argument(
+        "--duration",
+        help="Run whole flywheel iterations until this time budget is reached, e.g. 30m, 12h, or 1h30m.",
+    )
     loop_parser.add_argument("--min-win-rate", type=float, default=0.55)
     loop_parser.add_argument("--min-average-score-margin", type=float, default=0.0)
     loop_parser.add_argument("--dry-run", action="store_true")
@@ -822,19 +884,19 @@ def main() -> None:
 
     promote_parser = subparsers.add_parser("promote")
     promote_parser.add_argument("--iteration", type=int, required=True)
-    promote_parser.add_argument("--stage-dir", type=Path, default=STAGE4_DIR)
+    promote_parser.add_argument("--run-dir", type=Path, default=EZ_FLYWHEEL_DIR)
     promote_parser.add_argument("--reason")
 
     args = parser.parse_args()
     if args.command == "status":
-        print(json.dumps(status_payload(args.stage_dir), sort_keys=True))
+        print(json.dumps(status_payload(args.run_dir), sort_keys=True))
         return
 
     if args.command == "init-state":
-        path = stage4_state_path(args.stage_dir)
+        path = ez_flywheel_state_path(args.run_dir)
         if path.exists() and not args.overwrite:
             raise SystemExit(
-                f"Stage 4 state already exists: {path}. Pass --overwrite to replace it."
+                f"EpsilonZero flywheel state already exists: {path}. Pass --overwrite to replace it."
             )
         if args.random_checkpoint and args.champion_checkpoint is not None:
             raise SystemExit("Use either --random-checkpoint or --champion-checkpoint, not both.")
@@ -844,7 +906,7 @@ def main() -> None:
                 rows=args.rows,
                 cols=args.cols,
                 seed=args.random_seed,
-                stage_dir=args.stage_dir,
+                run_dir=args.run_dir,
             )
             create_random_checkpoint(
                 champion_checkpoint,
@@ -856,8 +918,8 @@ def main() -> None:
                 device=args.mlx_device,
                 overwrite=args.overwrite,
             )
-        state = Stage4State(champion_checkpoint=champion_checkpoint)
-        save_state(state, args.stage_dir)
+        state = EzFlywheelState(champion_checkpoint=champion_checkpoint)
+        save_state(state, args.run_dir)
         event = {
             "event": "state_initialized",
             "state": state.to_json(),
@@ -872,12 +934,12 @@ def main() -> None:
                 "seed": args.random_seed,
                 "mlxDevice": args.mlx_device,
             }
-        append_history(event, args.stage_dir)
+        append_history(event, args.run_dir)
         print(json.dumps(state.to_json(), sort_keys=True))
         return
 
     if args.command == "next":
-        state = load_state(args.stage_dir)
+        state = load_state(args.run_dir)
         iteration = args.iteration or state.next_iteration
         config = config_from_args(args, iteration=iteration)
         next_state = run_next_iteration(
@@ -895,7 +957,7 @@ def main() -> None:
         return
 
     if args.command == "promote":
-        state = promote_iteration(args.iteration, args.stage_dir, reason=args.reason)
+        state = promote_iteration(args.iteration, args.run_dir, reason=args.reason)
         print(json.dumps(state.to_json(), sort_keys=True))
         return
 
