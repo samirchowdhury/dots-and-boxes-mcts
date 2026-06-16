@@ -130,7 +130,7 @@ Or run whole iterations until a wall-clock budget is reached:
 
 ```bash
 uv run python -m dots_boxes_mcts.ez_flywheel loop \
-  --duration 12h \
+  --duration 8h \
   --min-win-rate 0.55 \
   --min-average-score-margin 0.0
 ```
@@ -145,13 +145,17 @@ Evaluate a trained EpsilonZero checkpoint against the browser bot at
 [dotsandboxes.org](https://dotsandboxes.org/):
 
 ```bash
+ITER=001
+THINK=0.25
+THINK_TAG=${THINK/./p}
 uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
-  --checkpoint runs/ez-flywheel/ez-policy-value-4x4-iter003-sims2000.npz \
-  --games 10 \
+  --checkpoint runs/ez-flywheel/ez-policy-value-4x4-iter${ITER}-sims2000.npz \
+  --games 2 \
   --simulations 2000 \
   --mlx-device gpu \
   --alternate-players \
-  --out runs/dotsandboxes-org/ez-flywheel/iter003-vs-dotsandboxes-org-4x4.jsonl
+  --site-think-time "$THINK" \
+  --out runs/dotsandboxes-org/ez-flywheel/iter${ITER}-vs-dotsandboxes-org-4x4-think${THINK_TAG}.jsonl
 ```
 
 Use the latest promoted checkpoint from `runs/ez-flywheel/`. `--alternate-players`
