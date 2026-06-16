@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from dots_boxes_mcts.az_checkpoint_eval import summarize_checkpoint_match_records
+from dots_boxes_mcts.ez_checkpoint_eval import summarize_checkpoint_match_records
 from dots_boxes_mcts.encoding import CHANNEL_NAMES, action_ids, board_shape
 from dots_boxes_mcts.train import MlxPolicyValueNetwork
 
@@ -267,7 +267,7 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
         [
             sys.executable,
             "-m",
-            "dots_boxes_mcts.az_guided_self_play",
+            "dots_boxes_mcts.ez_guided_self_play",
             "--checkpoint",
             str(checkpoint),
             "--iteration",
@@ -362,7 +362,7 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
             [
                 sys.executable,
                 "-m",
-                "dots_boxes_mcts.az_mcts_simulation_probe",
+                "dots_boxes_mcts.ez_mcts_simulation_probe",
                 str(config.tactical_suite),
                 "--checkpoint",
                 str(paths.checkpoint),
@@ -385,7 +385,7 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
             [
                 sys.executable,
                 "-m",
-                "dots_boxes_mcts.az_checkpoint_eval",
+                "dots_boxes_mcts.ez_checkpoint_eval",
                 "--candidate",
                 str(paths.checkpoint),
                 "--baseline",

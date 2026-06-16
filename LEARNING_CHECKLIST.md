@@ -360,20 +360,8 @@ records a decision with root state, selected move, visit-count policy target,
 and final value target. Use 4x4-dot boards here so the first real training
 checkpoint sees a slightly richer board than the 3x3-dot smoke tests.
 
-- [ ] Run a 10-game smoke test.
-
-```bash
-uv run python -m dots_boxes_mcts.az_self_play \
-  --games 10 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --seed 1 \
-  --out runs/stage-3.2/self-play-4x4-10.jsonl
-```
-
-Check the printed summary. On a 4x4-dot board, `averageDecisionsPerGame` should
-be `24.0`, because there are 24 edges and both MCTS players record every move.
+This stage used an older plain MCTS-vs-MCTS self-play generator that has since
+been removed. Use the current EpsilonZero loop in the README for new self-play.
 
 - [ ] Convert the smoke batch into examples and preview a few.
 
@@ -387,43 +375,8 @@ uv run python -m dots_boxes_mcts.train \
 
 Check that examples include both `player: 0` and `player: 1`.
 
-- [ ] Ramp to 100 games.
-
-```bash
-uv run python -m dots_boxes_mcts.az_self_play \
-  --games 100 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --seed 1001 \
-  --out runs/stage-3.2/self-play-4x4-100.jsonl
-
-uv run python -m dots_boxes_mcts.train \
-  runs/stage-3.2/self-play-4x4-100.jsonl \
-  --out runs/stage-3.2/examples-4x4-100.jsonl
-```
-
-Expected example count for 4x4 dots is `games * 24`, so 100 games should produce
-2,400 training examples.
-
-- [ ] Ramp to 1,000 games.
-
-```bash
-uv run python -m dots_boxes_mcts.az_self_play \
-  --games 1000 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --seed 2001 \
-  --out runs/stage-3.2/self-play-4x4-1000.jsonl
-
-uv run python -m dots_boxes_mcts.train \
-  runs/stage-3.2/self-play-4x4-1000.jsonl \
-  --out runs/stage-3.2/examples-4x4-1000.jsonl
-```
-
-Expected example count is 24,000. Inspect file size and runtime before moving
-to 10,000 games or larger boards.
+The old ramp commands are intentionally omitted here to avoid documenting a
+deleted script path.
 
 ## Stage 3.3: Train The First Real MLX Checkpoint
 
@@ -471,7 +424,7 @@ the value head instead of random rollouts.
 - [ ] Run one guided-search smoke test.
 
 ```bash
-uv run python -m dots_boxes_mcts.az_mcts \
+uv run python -m dots_boxes_mcts.ez_mcts \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --rows 4 \
   --cols 4 \
@@ -486,36 +439,9 @@ Check that the selected move is legal and that the root stats have visit counts.
 Goal: compare network-guided MCTS against baselines before trusting it to make
 new training data.
 
-- [ ] Evaluate against random.
-
-```bash
-uv run python -m dots_boxes_mcts.az_evaluate \
-  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --opponent random \
-  --games 50 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --seed 3001 \
-  --mlx-device gpu \
-  --out runs/stage-3.5/guided-vs-random-4x4-50.jsonl
-```
-
-- [ ] Evaluate against plain MCTS at the same simulation count.
-
-```bash
-uv run python -m dots_boxes_mcts.az_evaluate \
-  --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --opponent plain_mcts \
-  --games 50 \
-  --rows 4 \
-  --cols 4 \
-  --simulations 25 \
-  --opponent-simulations 25 \
-  --seed 4001 \
-  --mlx-device gpu \
-  --out runs/stage-3.5/guided-vs-plain-mcts-25-4x4-50.jsonl
-```
+The older standalone evaluator has been removed. Use `ez_checkpoint_eval` for
+checkpoint-vs-checkpoint gating, and use `dotsandboxes_org_browser_eval` for the
+current external-opponent check.
 
 The useful signal is not just win rate. Inspect average score margin and replay
 a few losses. If guided MCTS loses badly to plain MCTS, improve the checkpoint
@@ -529,7 +455,7 @@ checkpoint, and inspect whether the loop is producing useful diversity.
 - [ ] Generate guided self-play.
 
 ```bash
-uv run python -m dots_boxes_mcts.az_guided_self_play \
+uv run python -m dots_boxes_mcts.ez_guided_self_play \
   --checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --iteration 1 \
   --games 200 \
@@ -586,7 +512,7 @@ uv run python -m dots_boxes_mcts.train \
 - [ ] Evaluate the new checkpoint against the current champion.
 
 ```bash
-uv run python -m dots_boxes_mcts.az_checkpoint_eval \
+uv run python -m dots_boxes_mcts.ez_checkpoint_eval \
   --candidate runs/stage-3.6/mlx-resconv-policy-value-4x4-iter001-guided-sims250.npz \
   --baseline runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
   --games 100 \
@@ -612,21 +538,20 @@ failure cases to improve. If the candidate does not clear the promotion bar,
 leave Stage 3.3 as the champion and generate the next candidate from Stage 3.3
 again.
 
-- [ ] Or run the same first iteration through the tracked pipeline runner.
+- [ ] Or run the current EpsilonZero flywheel.
 
 ```bash
-uv run python -m dots_boxes_mcts.az_flywheel init-state \
-  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
-uv run python -m dots_boxes_mcts.az_flywheel next --dry-run
-uv run python -m dots_boxes_mcts.az_flywheel next
+uv run python -m dots_boxes_mcts.ez_flywheel init-state \
+  --random-checkpoint \
+  --random-seed 1
+uv run python -m dots_boxes_mcts.ez_flywheel loop \
+  --iterations 3 \
+  --min-win-rate 0.55 \
+  --min-average-score-margin 0.0
 ```
 
-This is the preferred path once you are ready to use the flywheel regularly.
-It writes the ledger to `runs/az-flywheel/`, keeps iteration artifacts in
-`runs/stage-3.6/`, and records the candidate evaluation as pending after the
-run completes. Use `init-state --overwrite` only when you intentionally want to
-reset the ledger state; use `next --overwrite` only when you intentionally want
-to replace existing Stage 3.6 iteration outputs.
+This is the preferred path once you are ready to use the flywheel regularly. It
+writes the ledger and iteration artifacts under `runs/ez-flywheel/`.
 
 ## Stage 3.7: Continue The Flywheel
 
@@ -634,135 +559,36 @@ Goal: generate new self-play from the current champion, continue optimizing the
 latest training checkpoint, and evaluate whether the new challenger deserves
 promotion.
 
-The tracked pipeline runner keeps a tiny local ledger in
-`runs/az-flywheel/flywheel-state.json` and an append-only history in
-`runs/az-flywheel/flywheel-history.jsonl`. Here `az` means
-AlphaZero-style: self-play guided by a policy/value network, training from that
-self-play, and champion-gated checkpoint evaluation. The ledger is stage-neutral
-because it tracks the flywheel process across Stage 3.6, Stage 3.7, and future
-iterations; the generated games, examples, checkpoints, and evaluations still
-default to `runs/stage-3.6/`.
+The EpsilonZero flywheel keeps a tiny local ledger in
+`runs/ez-flywheel/ez-flywheel-state.json` and an append-only history in
+`runs/ez-flywheel/ez-flywheel-history.jsonl`. Use `loop` for normal work so you
+do not have to remember the current iteration, champion checkpoint, or latest
+candidate checkpoint.
 
-The state records the next iteration, the current champion checkpoint, the
-latest candidate checkpoint, and the last evaluation summary. Use this mode for
-normal work so you do not have to remember which iteration, champion, or
-promotion decision is current.
-
-- [ ] Initialize the tracked flywheel state.
+- [ ] Let the flywheel run several iterations with a fixed promotion policy.
 
 ```bash
-uv run python -m dots_boxes_mcts.az_flywheel init-state \
-  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz
-```
-
-Use `--overwrite` only when you intentionally want to reset the tracked state.
-This does not delete checkpoints or replay files; it only rewrites the ledger
-state file.
-
-- [ ] Check what the runner thinks is current.
-
-```bash
-uv run python -m dots_boxes_mcts.az_flywheel status
-```
-
-- [ ] Dry-run the next tracked iteration.
-
-```bash
-uv run python -m dots_boxes_mcts.az_flywheel next --dry-run
-```
-
-- [ ] Run the next tracked iteration.
-
-```bash
-uv run python -m dots_boxes_mcts.az_flywheel next
-```
-
-After `next` finishes, the runner reads the checkpoint-match replay file,
-records the candidate evaluation summary, advances `nextIteration`, and leaves
-the promotion decision as `pending`.
-
-- [ ] Promote a candidate that clears the bar.
-
-```bash
-uv run python -m dots_boxes_mcts.az_flywheel promote \
-  --iteration 1 \
-  --reason "cleared promotion bar in checkpoint match"
-```
-
-Suggested first promotion bar:
-
-- at least 100 evaluation games against the current champion,
-- win rate at or above 55%,
-- average score margin at or above 0.0,
-- replayed wins and losses do not show a new obvious failure mode,
-- performance against plain MCTS has not regressed badly.
-
-- [ ] Or reject a candidate and keep the current champion.
-
-```bash
-uv run python -m dots_boxes_mcts.az_flywheel reject \
-  --iteration 1 \
-  --reason "evaluation exposed repeated opening mistakes"
-```
-
-`reject` is a bookkeeping command, not a destructive command. It reads that
-iteration's evaluation file, writes a `rejected` decision and summary into the
-ledger, leaves `championCheckpoint` unchanged, and keeps `nextIteration`
-advanced. The candidate checkpoint and replay files stay on disk. The next
-`uv run python -m dots_boxes_mcts.az_flywheel next` will still use the current champion
-for self-play and evaluation, while training defaults to the previous iteration
-candidate unless you override `--init-checkpoint`.
-
-The loop is intentionally champion-gated for data generation and evaluation: the
-current champion controls self-play and the evaluation baseline. Training still
-defaults to the previous iteration candidate after iteration 1, even if that
-candidate was not promoted. Pass `--init-checkpoint` to `next` only when a
-checkpoint has a nonstandard name or when you intentionally want to restart
-optimization from a different checkpoint.
-
-- [ ] Or let the flywheel run several iterations with a fixed promotion policy.
-
-```bash
-uv run python -m dots_boxes_mcts.az_flywheel loop \
+uv run python -m dots_boxes_mcts.ez_flywheel loop \
   --iterations 5 \
   --min-win-rate 0.55 \
   --min-average-score-margin 0.0
 ```
 
-`loop` repeatedly runs the tracked `next` pipeline, records the checkpoint-match
-summary, and then automatically promotes or rejects the candidate. A candidate
-is promoted only if both thresholds pass. If it is rejected, the champion stays
-unchanged for the next self-play and evaluation baseline, but training still
-continues from that rejected candidate by default. This preserves the current
-flywheel behavior: champion-gated data generation and evaluation, continuous
-optimization from the latest candidate.
-
-The old explicit form still works for one-off runs:
-
-```bash
-uv run python -m dots_boxes_mcts.az_flywheel \
-  --iteration 2 \
-  --champion-checkpoint runs/stage-3.3/mlx-resconv-policy-value-4x4-1000.npz \
-  --dry-run
-```
-
-Prefer the tracked `next`/`status`/`promote`/`reject` workflow for real
-experiments. Use the replay viewer after each iteration; a better checkpoint
+`loop` repeatedly generates self-play, builds examples, trains a candidate,
+evaluates it against the current champion, and promotes it only when both
+thresholds pass. Use the replay viewer after each iteration; a better checkpoint
 should win more often, lose by smaller margins, and avoid obvious repeated
 mistakes.
 
 - [ ] Read the anchor files once they exist.
 
 ```bash
-sed -n '1,260p' dots_boxes_mcts/az_self_play.py
-sed -n '1,260p' dots_boxes_mcts/az_mcts.py
-sed -n '1,260p' dots_boxes_mcts/az_evaluate.py
-sed -n '1,260p' dots_boxes_mcts/az_checkpoint_eval.py
-sed -n '1,260p' dots_boxes_mcts/az_guided_self_play.py
+sed -n '1,260p' dots_boxes_mcts/ez_mcts.py
+sed -n '1,260p' dots_boxes_mcts/ez_checkpoint_eval.py
+sed -n '1,260p' dots_boxes_mcts/ez_guided_self_play.py
 sed -n '1,260p' dots_boxes_mcts/encoding.py
-sed -n '1,260p' dots_boxes_mcts/network.py
 sed -n '1,260p' dots_boxes_mcts/train.py
-sed -n '1,260p' dots_boxes_mcts/az_mcts.py
+sed -n '1,260p' dots_boxes_mcts/ez_flywheel.py
 ```
 
 - [ ] Ask for training diagnostics.

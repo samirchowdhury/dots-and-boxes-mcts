@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dots_boxes_mcts.az_checkpoint_eval import (
+from dots_boxes_mcts.ez_checkpoint_eval import (
     checkpoint_match_record,
     generate_checkpoint_match_games,
     summarize_checkpoint_match_records,
@@ -73,11 +73,11 @@ def test_checkpoint_match_uses_seeded_random_openings_for_game_diversity(monkeyp
             return True
 
     monkeypatch.setattr(
-        "dots_boxes_mcts.az_checkpoint_eval.NetworkEvaluator",
+        "dots_boxes_mcts.ez_checkpoint_eval.NetworkEvaluator",
         lambda checkpoint, device: object(),
     )
     monkeypatch.setattr(
-        "dots_boxes_mcts.az_checkpoint_eval.NetworkGuidedMCTS",
+        "dots_boxes_mcts.ez_checkpoint_eval.NetworkGuidedMCTS",
         FakeNetworkGuidedMCTS,
     )
 

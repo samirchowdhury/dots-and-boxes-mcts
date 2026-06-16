@@ -3,10 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections import OrderedDict
 from pathlib import Path
 
-from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.ez_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.game import GameState
 from dots_boxes_mcts.mcts import SearchResult
 from dots_boxes_mcts.mcts_simulation_probe import (
@@ -22,52 +21,6 @@ from dots_boxes_mcts.mcts_simulation_probe import (
 )
 
 DEFAULT_SIMULATIONS = [5_000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000, 100_000]
-
-
-class CachedNetworkEvaluator:
-    def __init__(
-        self,
-        evaluator: NetworkEvaluator,
-        max_entries: int = 50_000,
-        clear_mlx_cache_every: int = 500,
-    ) -> None:
-        self.evaluator = evaluator
-        self.max_entries = max_entries
-        self.clear_mlx_cache_every = clear_mlx_cache_every
-        self.cache: OrderedDict[tuple, tuple[tuple[tuple[str, float], ...], float]] = OrderedDict()
-        self.hits = 0
-        self.misses = 0
-
-    def evaluate(self, state: GameState) -> tuple[dict[str, float], float]:
-        key = state_key(state)
-        cached = self.cache.get(key)
-        if cached is not None:
-            self.cache.move_to_end(key)
-            self.hits += 1
-            priors, value = cached
-            return dict(priors), value
-
-        priors, value = self.evaluator.evaluate(state)
-        self.misses += 1
-        if self.clear_mlx_cache_every > 0 and self.misses % self.clear_mlx_cache_every == 0:
-            self.evaluator.mx.clear_cache()
-            self.evaluator.mx.clear_streams()
-        if self.max_entries > 0:
-            self.cache[key] = (tuple(sorted(priors.items())), value)
-            if len(self.cache) > self.max_entries:
-                self.cache.popitem(last=False)
-        return priors, value
-
-
-def state_key(state: GameState) -> tuple:
-    return (
-        state.rows,
-        state.cols,
-        state.current_player,
-        tuple(sorted(state.edges)),
-        state.boxes,
-        state.scores,
-    )
 
 
 def write_guided_summary_csv(path: Path, summaries: list[dict]) -> None:

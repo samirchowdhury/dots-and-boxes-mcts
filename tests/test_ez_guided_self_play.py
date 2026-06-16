@@ -1,7 +1,7 @@
 import random
 from pathlib import Path
 
-from dots_boxes_mcts.az_guided_self_play import (
+from dots_boxes_mcts.ez_guided_self_play import (
     default_output_path,
     ensure_outputs_do_not_exist,
     format_game_progress,
@@ -195,11 +195,11 @@ def test_guided_self_play_advances_tree_with_sampled_move(monkeypatch) -> None:
             return True
 
     monkeypatch.setattr(
-        "dots_boxes_mcts.az_guided_self_play.NetworkEvaluator",
+        "dots_boxes_mcts.ez_guided_self_play.NetworkEvaluator",
         lambda checkpoint, device: object(),
     )
     monkeypatch.setattr(
-        "dots_boxes_mcts.az_guided_self_play.NetworkGuidedMCTS",
+        "dots_boxes_mcts.ez_guided_self_play.NetworkGuidedMCTS",
         FakeNetworkGuidedMCTS,
     )
 

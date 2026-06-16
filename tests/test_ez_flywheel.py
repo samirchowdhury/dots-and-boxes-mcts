@@ -56,7 +56,7 @@ def test_ez_flywheel_first_iteration_uses_current_checkpoint_for_guided_self_pla
     self_play_command = commands[0]
     train_command = commands[2]
 
-    assert self_play_command[2] == "dots_boxes_mcts.az_guided_self_play"
+    assert self_play_command[2] == "dots_boxes_mcts.ez_guided_self_play"
     assert self_play_command[self_play_command.index("--checkpoint") + 1] == str(CHAMPION)
     assert self_play_command[self_play_command.index("--simulations") + 1] == "2000"
     assert "--evaluator-cache-entries" in self_play_command
@@ -86,12 +86,12 @@ def test_ez_flywheel_command_plan_skips_optional_diagnostics_by_default() -> Non
 
     modules = [command[2] for command in commands]
     assert "dots_boxes_mcts.strategic_eval" not in modules
-    assert "dots_boxes_mcts.az_mcts_simulation_probe" not in modules
+    assert "dots_boxes_mcts.ez_mcts_simulation_probe" not in modules
     assert modules == [
-        "dots_boxes_mcts.az_guided_self_play",
+        "dots_boxes_mcts.ez_guided_self_play",
         "dots_boxes_mcts.train",
         "dots_boxes_mcts.train",
-        "dots_boxes_mcts.az_checkpoint_eval",
+        "dots_boxes_mcts.ez_checkpoint_eval",
     ]
 
 
@@ -107,7 +107,7 @@ def test_ez_flywheel_command_plan_can_include_optional_diagnostics() -> None:
     strategic = commands[3]
     probe = commands[4]
     assert strategic[2] == "dots_boxes_mcts.strategic_eval"
-    assert probe[2] == "dots_boxes_mcts.az_mcts_simulation_probe"
+    assert probe[2] == "dots_boxes_mcts.ez_mcts_simulation_probe"
     assert str(DEFAULT_TACTICAL_SUITE) in probe
     assert probe[probe.index("--checkpoint") + 1] == str(ez_flywheel_paths(config).checkpoint)
     assert probe[probe.index("--simulations") + 1] == "2000"
@@ -120,11 +120,11 @@ def test_ez_flywheel_command_plan_passes_cache_entries_to_champion_eval() -> Non
     commands = command_plan(config, state=EzFlywheelState(champion_checkpoint=CHAMPION))
 
     eval_command = commands[3]
-    assert eval_command[2] == "dots_boxes_mcts.az_checkpoint_eval"
+    assert eval_command[2] == "dots_boxes_mcts.ez_checkpoint_eval"
     assert eval_command[eval_command.index("--evaluator-cache-entries") + 1] == "1234"
 
 
-def test_ez_flywheel_state_round_trips_without_az_flywheel(tmp_path: Path) -> None:
+def test_ez_flywheel_state_round_trips_independently(tmp_path: Path) -> None:
     state = EzFlywheelState(
         next_iteration=3,
         champion_checkpoint=Path("runs/ez-flywheel/champion.npz"),
@@ -208,7 +208,7 @@ def test_ez_flywheel_loop_rejects_then_promotes_by_champion_gate(
     def fake_run_commands(commands: list[list[str]], dry_run: bool) -> None:
         assert not dry_run
         for command in commands:
-            if command[2] == "dots_boxes_mcts.az_guided_self_play":
+            if command[2] == "dots_boxes_mcts.ez_guided_self_play":
                 self_play_checkpoints.append(Path(command[command.index("--checkpoint") + 1]))
             if command[2] == "dots_boxes_mcts.train" and "--checkpoint-out" in command:
                 training_init_checkpoints.append(

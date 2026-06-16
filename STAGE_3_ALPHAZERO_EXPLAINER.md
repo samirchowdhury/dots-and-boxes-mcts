@@ -96,7 +96,7 @@ MCTS decisions, optimize policy loss plus value loss, and write checkpoints.
 Diagnostics should include policy loss, value loss, held-out loss, and a few
 human-readable positions where the top predicted moves changed.
 
-`dots_boxes_mcts/az_mcts.py` should replace random rollouts with network-guided
+`dots_boxes_mcts/ez_mcts.py` should replace random rollouts with network-guided
 search. At each root and child state, the model supplies priors for legal moves
 and a value estimate. MCTS still explores and verifies through real game rules,
 but the network helps it spend simulations on better candidates.

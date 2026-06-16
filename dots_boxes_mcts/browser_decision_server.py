@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from dots_boxes_mcts.az_mcts import NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.ez_mcts import NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.fast_mcts import FastUCTMCTS
 from dots_boxes_mcts.game import apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload

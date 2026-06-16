@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from dots_boxes_mcts.az_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.ez_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
 from dots_boxes_mcts.game import GameState, apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import SearchResult, result_payload
 from dots_boxes_mcts.self_play import write_jsonl

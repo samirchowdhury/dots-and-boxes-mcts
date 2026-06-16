@@ -18,11 +18,11 @@ from dots_boxes_mcts.train import load_mlx_checkpoint, require_mlx
 
 
 @dataclass
-class AZNode:
+class EZNode:
     state: GameState
     prior: float = 1.0
     move: str | None = None
-    children: dict[str, AZNode] = field(default_factory=dict)
+    children: dict[str, EZNode] = field(default_factory=dict)
     visits: int = 0
     value_sum: float = 0.0
 
@@ -56,9 +56,15 @@ class NetworkEvaluator:
 
 
 class CachedNetworkEvaluator:
-    def __init__(self, evaluator: NetworkEvaluator, max_entries: int = 500_000) -> None:
+    def __init__(
+        self,
+        evaluator: NetworkEvaluator,
+        max_entries: int = 500_000,
+        clear_mlx_cache_every: int = 0,
+    ) -> None:
         self.evaluator = evaluator
         self.max_entries = max_entries
+        self.clear_mlx_cache_every = clear_mlx_cache_every
         self.cache: OrderedDict[tuple, tuple[tuple[tuple[str, float], ...], float]] = OrderedDict()
         self.hits = 0
         self.misses = 0
@@ -74,6 +80,9 @@ class CachedNetworkEvaluator:
 
         priors, value = self.evaluator.evaluate(state)
         self.misses += 1
+        if self.clear_mlx_cache_every > 0 and self.misses % self.clear_mlx_cache_every == 0:
+            self.evaluator.mx.clear_cache()
+            self.evaluator.mx.clear_streams()
         if self.max_entries > 0:
             self.cache[key] = (tuple(sorted(priors.items())), value)
             if len(self.cache) > self.max_entries:
@@ -112,14 +121,14 @@ class NetworkGuidedMCTS:
         self.rng = random.Random(seed)
         self.root_dirichlet_alpha = root_dirichlet_alpha
         self.root_exploration_fraction = root_exploration_fraction
-        self._reuse_root: AZNode | None = None
+        self._reuse_root: EZNode | None = None
         self._reuse_root_noise_applied = False
 
     def search(self, state: GameState) -> SearchResult:
         if state.terminal:
             raise ValueError("Cannot search from a terminal state.")
 
-        root = AZNode(state=state)
+        root = EZNode(state=state)
         self._expand(root)
         self._add_root_noise(root)
         for _ in range(self.simulations):
@@ -141,7 +150,7 @@ class NetworkGuidedMCTS:
         if normalized_budgets[0] < 1:
             raise ValueError("budgets must be at least 1")
 
-        root = AZNode(state=state)
+        root = EZNode(state=state)
         self._expand(root)
         self._add_root_noise(root)
         results_by_budget: dict[int, SearchResult] = {}
@@ -191,22 +200,22 @@ class NetworkGuidedMCTS:
         self._reuse_root = None
         self._reuse_root_noise_applied = False
 
-    def _reusable_root_for(self, state: GameState) -> AZNode:
+    def _reusable_root_for(self, state: GameState) -> EZNode:
         if self._reuse_root is None or self._reuse_root.state != state:
-            self._reuse_root = AZNode(state=state)
+            self._reuse_root = EZNode(state=state)
             self._reuse_root_noise_applied = False
         return self._reuse_root
 
-    def _prepare_root(self, root: AZNode) -> None:
+    def _prepare_root(self, root: EZNode) -> None:
         if not root.expanded():
             self._expand(root)
         if not self._reuse_root_noise_applied:
             self._add_root_noise(root)
             self._reuse_root_noise_applied = True
 
-    def _run_simulation(self, root: AZNode) -> None:
+    def _run_simulation(self, root: EZNode) -> None:
         node = root
-        path: list[tuple[AZNode, AZNode]] = []
+        path: list[tuple[EZNode, EZNode]] = []
         while node.expanded() and not node.state.terminal:
             child = self._select_child(node)
             path.append((node, child))
@@ -224,7 +233,7 @@ class NetworkGuidedMCTS:
             child.value_sum += leaf_value if parent.state.current_player == leaf_player else -leaf_value
         root.visits += 1
 
-    def _search_result(self, root: AZNode, simulations: int) -> SearchResult:
+    def _search_result(self, root: EZNode, simulations: int) -> SearchResult:
         return SearchResult(
             move=self._best_root_move(root),
             simulations=simulations,
@@ -232,11 +241,11 @@ class NetworkGuidedMCTS:
             stats=self._root_stats(root),
         )
 
-    def _expand(self, node: AZNode) -> float:
+    def _expand(self, node: EZNode) -> float:
         priors, value = self.evaluator.evaluate(node.state)
         for move in legal_moves(node.state):
             child_state = apply_move(node.state, move)
-            node.children[move] = AZNode(
+            node.children[move] = EZNode(
                 state=child_state,
                 prior=max(priors.get(move, 0.0), 0.0),
                 move=move,
@@ -252,17 +261,17 @@ class NetworkGuidedMCTS:
                     child.prior /= total_prior
         return value
 
-    def _select_child(self, node: AZNode) -> AZNode:
+    def _select_child(self, node: EZNode) -> EZNode:
         sqrt_parent = math.sqrt(max(node.visits, 1))
 
-        def score(child: AZNode) -> float:
+        def score(child: EZNode) -> float:
             q = child.mean_value()
             u = self.c_puct * child.prior * sqrt_parent / (1 + child.visits)
             return q + u
 
         return max(node.children.values(), key=score)
 
-    def _add_root_noise(self, root: AZNode) -> None:
+    def _add_root_noise(self, root: EZNode) -> None:
         if (
             not root.children
             or self.root_dirichlet_alpha <= 0
@@ -285,7 +294,7 @@ class NetworkGuidedMCTS:
             return [1.0 / count for _ in range(count)]
         return [sample / total for sample in samples]
 
-    def _best_root_move(self, root: AZNode) -> str:
+    def _best_root_move(self, root: EZNode) -> str:
         if not root.children:
             raise ValueError("Search did not expand any legal moves.")
         child = max(
@@ -295,7 +304,7 @@ class NetworkGuidedMCTS:
         assert child.move is not None
         return child.move
 
-    def _root_stats(self, root: AZNode) -> list[SearchStats]:
+    def _root_stats(self, root: EZNode) -> list[SearchStats]:
         children = sorted(root.children.values(), key=lambda child: (-child.visits, child.move or ""))
         return [
             SearchStats(
