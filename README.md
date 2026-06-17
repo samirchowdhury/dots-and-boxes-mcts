@@ -8,6 +8,8 @@ This README is meant to be a pedagogical guide. Follow this pattern:
 2. Look at the evidence: games, stats, visual replays, and failure cases.
 3. Read only the one or two files that explain the mechanism you are studying.
 
+**Notation:** We will use AZ and AGZ as shorthand for AlphaZero and AlphaGo Zero, respectively. Note that these are different works with slightly different implementations. The ELF OpenGo[^1] paper explains these differences well.
+
 ## Environment
 
 This project uses `uv` for Python environment and dependency management. Install
