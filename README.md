@@ -122,24 +122,18 @@ uv run python -m dots_boxes_mcts.ez_flywheel init-state \
 - [ ] Run a few EpsilonZero flywheel iterations.
 
 ```bash
-uv run python -m dots_boxes_mcts.ez_flywheel loop \
-  --iterations 3 \
-  --min-win-rate 0.55 \
-  --min-average-score-margin 0.0
+uv run python -m dots_boxes_mcts.ez_flywheel loop --iterations 3
 ```
 
 Or run whole iterations until a wall-clock budget is reached:
 
 ```bash
-uv run python -m dots_boxes_mcts.ez_flywheel loop \
-  --duration 8h \
-  --min-win-rate 0.55 \
-  --min-average-score-margin 0.0
+uv run python -m dots_boxes_mcts.ez_flywheel loop --duration 8h
 ```
 
-The flywheel performs self-play games, trains the network, and promotes checkpoints if they can beat the current champion by a sufficient margin.
+The flywheel performs self-play games, trains the network, and advances to the latest checkpoint after each completed iteration.
 It tracks results and training state in a small ledger under `runs/ez-flywheel/`.
-Rerunning the command will automatically resume self-play and training from the current champion.
+Rerunning the command will automatically resume self-play and training from the latest checkpoint.
 
 ### Evaluation
 
@@ -160,7 +154,7 @@ uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --out runs/dotsandboxes-org/ez-flywheel/iter${ITER}-vs-dotsandboxes-org-4x4-think${THINK_TAG}.jsonl
 ```
 
-Use the latest promoted checkpoint from `runs/ez-flywheel/`. `--alternate-players`
+Use the latest checkpoint from `runs/ez-flywheel/`. `--alternate-players`
 splits games across first and second player, which matters a lot in Dots and
 Boxes.
 
@@ -173,40 +167,32 @@ Build the optional C++ network-guided MCTS backend for the active Python
 environment:
 
 ```bash
-pyenv activate data
 uv run python -m dots_boxes_mcts.build_fast_ez_mcts
 ```
 
-If this is a fresh flywheel run, initialize the champion checkpoint once:
+If this is a fresh flywheel run, initialize the first training checkpoint once:
 
 ```bash
-pyenv activate data
 uv run python -m dots_boxes_mcts.ez_flywheel init-state \
   --random-checkpoint \
   --random-seed 1
 ```
 
-Run the C++ flywheel for eight hours. Tree reuse is off by default; this uses
-fresh per-move C++ searches with batched leaf evaluation and virtual loss.
+Run the C++ flywheel for a set duration. Tree reuse is off by default; this uses fresh per-move C++ searches with batched leaf evaluation and virtual loss.
 
 ```bash
-pyenv activate data
 uv run python -m dots_boxes_mcts.ez_flywheel loop \
   --duration 8h \
   --mcts-backend cpp \
   --mcts-batch-size 8 \
   --virtual-loss 1.0 \
   --mlx-device gpu \
-  --simulations 2000 \
-  --eval-champion-simulations 2000 \
-  --min-win-rate 0.55 \
-  --min-average-score-margin 0.0
+  --simulations 2000
 ```
 
 Check progress or compare the Python and C++ search paths:
 
 ```bash
-pyenv activate data
 uv run python -m dots_boxes_mcts.ez_flywheel status
 
 uv run python -m dots_boxes_mcts.profile_ez_mcts \

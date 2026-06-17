@@ -22,6 +22,10 @@ DEFAULT_TACTICAL_SUITE = Path("runs/stage-3.8/papg-stage3.6-unsafe-opener-positi
 DEFAULT_EZ_FLYWHEEL_SIMULATIONS = 2_000
 DEFAULT_EVALUATOR_CACHE_ENTRIES = 500_000
 _DURATION_PART_RE = re.compile(r"(?P<value>\d+(?:\.\d+)?)(?P<unit>[smhd])")
+_REPLAY_SELF_PLAY_RE = re.compile(
+    r"^ez-self-play-(?P<rows>\d+)x(?P<cols>\d+)-iter(?P<iteration>\d+)-"
+    r"games(?P<games>\d+)-sims(?P<simulations>\d+)\.jsonl$"
+)
 
 
 @dataclass(frozen=True)
@@ -58,7 +62,7 @@ class EzFlywheelConfig:
     run_strategic_eval: bool = False
     tactical_suite: Path | None = None
     tactical_probe_seed: int = 1
-    eval_champion_games: int = 20
+    eval_champion_games: int = 0
     eval_champion_simulations: int = 2000
     eval_champion_seed: int | None = None
     c_puct: float = 1.5
@@ -70,6 +74,7 @@ class EzFlywheelConfig:
     mcts_backend: str = "python"
     mcts_batch_size: int = 8
     virtual_loss: float = 1.0
+    replay_window_games: int = 1000
 
 
 @dataclass(frozen=True)
@@ -224,14 +229,15 @@ def append_history(event: dict[str, Any], run_dir: Path = EZ_FLYWHEEL_DIR) -> No
 def ez_flywheel_paths(config: EzFlywheelConfig) -> EzFlywheelPaths:
     label = iter_label(config.iteration)
     board = f"{config.rows}x{config.cols}"
-    suffix = f"{board}-{label}-games{config.games}-sims{config.simulations}"
+    self_play_suffix = f"{board}-{label}-games{config.games}-sims{config.simulations}"
+    examples_suffix = f"{board}-{label}-sims{config.simulations}"
     checkpoint = (
         config.run_dir
         / f"ez-policy-value-{board}-{label}-sims{config.simulations}.npz"
     )
     return EzFlywheelPaths(
-        games=config.run_dir / f"ez-self-play-{suffix}.jsonl",
-        examples=config.run_dir / f"ez-examples-{suffix}.jsonl",
+        games=config.run_dir / f"ez-self-play-{self_play_suffix}.jsonl",
+        examples=config.run_dir / f"ez-examples-{examples_suffix}.jsonl",
         checkpoint=checkpoint,
         diagnostics=checkpoint.with_name(f"{checkpoint.stem}-diagnostics.jsonl"),
         strategic_summary=config.run_dir / f"{label}-strategic-summary.json",
@@ -240,6 +246,68 @@ def ez_flywheel_paths(config: EzFlywheelConfig) -> EzFlywheelPaths:
         eval_champion=config.run_dir
         / f"{label}-vs-champion-sims{config.eval_champion_simulations}.jsonl",
     )
+
+
+def replay_game_file_metadata(path: Path) -> dict[str, int] | None:
+    match = _REPLAY_SELF_PLAY_RE.match(path.name)
+    if match is None:
+        return None
+    return {key: int(value) for key, value in match.groupdict().items()}
+
+
+def count_jsonl_records(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open(encoding="utf8") as handle:
+        return sum(1 for line in handle if line.strip())
+
+
+def replay_game_paths(config: EzFlywheelConfig) -> list[Path]:
+    paths = ez_flywheel_paths(config)
+    selected = [paths.games]
+    selected_games = max(config.games, 0)
+    if selected_games >= config.replay_window_games:
+        return selected
+
+    candidates: list[tuple[int, Path]] = []
+    if config.run_dir.exists():
+        for path in config.run_dir.glob("ez-self-play-*.jsonl"):
+            metadata = replay_game_file_metadata(path)
+            if metadata is None:
+                continue
+            if metadata["rows"] != config.rows or metadata["cols"] != config.cols:
+                continue
+            if metadata["simulations"] != config.simulations:
+                continue
+            if metadata["iteration"] >= config.iteration:
+                continue
+            candidates.append((metadata["iteration"], path))
+
+    for _, path in sorted(candidates, key=lambda item: item[0], reverse=True):
+        selected.append(path)
+        selected_games += count_jsonl_records(path)
+        if selected_games >= config.replay_window_games:
+            break
+    return selected
+
+
+def replay_metadata(config: EzFlywheelConfig) -> dict[str, Any]:
+    paths = ez_flywheel_paths(config)
+    selected_files = []
+    selected_games = 0
+    for path in replay_game_paths(config):
+        games = (
+            config.games
+            if path == paths.games and not path.exists()
+            else count_jsonl_records(path)
+        )
+        selected_games += games
+        selected_files.append({"path": str(path), "games": games})
+    return {
+        "requestedWindowGames": config.replay_window_games,
+        "selectedGames": selected_games,
+        "selectedFiles": selected_files,
+    }
 
 
 def current_training_checkpoint(config: EzFlywheelConfig, state: EzFlywheelState) -> Path | None:
@@ -313,7 +381,7 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
             sys.executable,
             "-m",
             "dots_boxes_mcts.train",
-            str(paths.games),
+            *[str(path) for path in replay_game_paths(config)],
             "--out",
             str(paths.examples),
         ],
@@ -389,7 +457,7 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
             ]
         )
 
-    if state.champion_checkpoint is not None:
+    if state.champion_checkpoint is not None and config.eval_champion_games > 0:
         commands.append(
             [
                 sys.executable,
@@ -427,6 +495,10 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
 
 
 def validate_inputs(config: EzFlywheelConfig, state: EzFlywheelState) -> None:
+    if config.replay_window_games < 1:
+        raise ValueError("--replay-window-games must be at least 1.")
+    if config.eval_champion_games < 0:
+        raise ValueError("--eval-champion-games must be non-negative.")
     missing: list[Path] = []
     init = training_init_checkpoint(config, state)
     if init is not None and not init.exists():
@@ -455,8 +527,9 @@ def validate_outputs(config: EzFlywheelConfig, paths: EzFlywheelPaths, overwrite
         paths.examples,
         paths.checkpoint,
         paths.diagnostics,
-        paths.eval_champion,
     ]
+    if config.eval_champion_games > 0:
+        outputs.append(paths.eval_champion)
     if config.run_strategic_eval:
         outputs.extend([paths.strategic_summary, paths.unsafe_positions])
     existing = [path for path in outputs if path.exists()]
@@ -507,22 +580,27 @@ def read_evaluation_summary(path: Path) -> dict[str, Any] | None:
 def record_completed_iteration(config: EzFlywheelConfig) -> EzFlywheelState:
     paths = ez_flywheel_paths(config)
     state = load_state(config.run_dir)
+    champion_summary = (
+        read_evaluation_summary(paths.eval_champion) if config.eval_champion_games > 0 else None
+    )
     evaluation = {
         "iteration": config.iteration,
         "candidateCheckpoint": str(paths.checkpoint),
+        "replay": replay_metadata(config),
+        "evalSkipped": config.eval_champion_games == 0,
         "strategicSummary": read_json(paths.strategic_summary)
         if config.run_strategic_eval
         else None,
         "tacticalProbe": read_json(paths.tactical_probe / "summary.json")
         if config.tactical_suite is not None
         else None,
-        "championSummary": read_evaluation_summary(paths.eval_champion),
-        "decision": "pending",
+        "championSummary": champion_summary,
+        "decision": "advanced",
         "promoted": None,
     }
     next_state = EzFlywheelState(
         next_iteration=max(state.next_iteration, config.iteration + 1),
-        champion_checkpoint=state.champion_checkpoint,
+        champion_checkpoint=paths.checkpoint,
         latest_candidate_checkpoint=paths.checkpoint,
         last_evaluation=evaluation,
     )
@@ -544,7 +622,9 @@ def record_completed_iteration(config: EzFlywheelConfig) -> EzFlywheelState:
                 if config.run_strategic_eval
                 else None,
                 "tacticalProbe": str(paths.tactical_probe) if config.tactical_suite else None,
-                "evalChampion": str(paths.eval_champion),
+                "evalChampion": str(paths.eval_champion)
+                if config.eval_champion_games > 0
+                else None,
             },
             "evaluation": evaluation,
         },
@@ -737,49 +817,25 @@ def run_loop(args: argparse.Namespace) -> None:
         if evaluation is None:
             raise RuntimeError("Completed iteration did not record an evaluation.")
         summary = evaluation.get("championSummary")
-        if not isinstance(summary, dict):
-            raise RuntimeError("Completed iteration did not record a champion-match summary.")
-        promoted = should_promote(
-            summary,
-            min_win_rate=args.min_win_rate,
-            min_average_score_margin=args.min_average_score_margin,
-        )
-        reason = auto_decision_reason(
-            summary,
-            promoted=promoted,
-            min_win_rate=args.min_win_rate,
-            min_average_score_margin=args.min_average_score_margin,
-        )
-        gate_text = (
-            "Champion gate: "
-            f"winRate={float(summary.get('winRate', 0.0)):.3f} "
-            f"averageScoreMargin={float(summary.get('averageScoreMargin', 0.0)):.3f}"
-        )
+        gate_text = "Continuous advance"
+        if isinstance(summary, dict):
+            gate_text += (
+                ": "
+                f"evalWinRate={float(summary.get('winRate', 0.0)):.3f} "
+                f"evalAverageScoreMargin={float(summary.get('averageScoreMargin', 0.0)):.3f}"
+            )
+        else:
+            gate_text += ": champion eval skipped"
         unsafe_rate = unsafe_selection_rate(evaluation, config.simulations)
         if unsafe_rate is not None:
             gate_text += f" unsafeOpenerSelectionRate={unsafe_rate:.3f}"
         print(gate_text, flush=True)
-        if promoted:
-            promoted_state = promote_iteration(
-                iteration=iteration,
-                run_dir=args.run_dir,
-                reason=reason,
-            )
-            print(f"Auto-promoted iteration {iteration}: {promoted_state.champion_checkpoint}")
-        else:
-            rejected_state = reject_iteration(
-                iteration=iteration,
-                run_dir=args.run_dir,
-                reason=reason,
-            )
-            print(
-                f"Auto-rejected iteration {iteration}. "
-                f"Champion remains: {rejected_state.champion_checkpoint}"
-            )
+        print(f"Advanced training checkpoint: {next_state.champion_checkpoint}", flush=True)
 
 
 def add_shared_next_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--games", type=int, default=25)
+    parser.add_argument("--replay-window-games", type=int, default=1000)
     parser.add_argument("--rows", type=int, default=4)
     parser.add_argument("--cols", type=int, default=4)
     parser.add_argument("--simulations", type=int, default=DEFAULT_EZ_FLYWHEEL_SIMULATIONS)
@@ -805,7 +861,7 @@ def add_shared_next_args(parser: argparse.ArgumentParser) -> None:
         help="Optional unsafe-opener suite to probe with network-guided MCTS.",
     )
     parser.add_argument("--tactical-probe-seed", type=int, default=1)
-    parser.add_argument("--eval-champion-games", type=int, default=20)
+    parser.add_argument("--eval-champion-games", type=int, default=0)
     parser.add_argument("--eval-champion-simulations", type=int, default=2000)
     parser.add_argument("--eval-champion-seed", type=int)
     parser.add_argument("--c-puct", type=float, default=1.5)
@@ -835,6 +891,7 @@ def config_from_args(args: argparse.Namespace, *, iteration: int) -> EzFlywheelC
         iteration=iteration,
         run_dir=args.run_dir,
         games=args.games,
+        replay_window_games=args.replay_window_games,
         rows=args.rows,
         cols=args.cols,
         simulations=args.simulations,

@@ -12,6 +12,7 @@ from dots_boxes_mcts.ez_flywheel import (
     load_state,
     parse_duration_seconds,
     random_checkpoint_path,
+    replay_game_paths,
     run_loop,
     save_state,
     should_promote,
@@ -35,6 +36,7 @@ def test_ez_flywheel_paths_are_independent_from_stage3_flywheel() -> None:
     assert paths.games == Path(
         "runs/ez-flywheel/ez-self-play-4x4-iter002-games3-sims2000.jsonl"
     )
+    assert paths.examples == Path("runs/ez-flywheel/ez-examples-4x4-iter002-sims2000.jsonl")
     assert paths.checkpoint == Path(
         "runs/ez-flywheel/ez-policy-value-4x4-iter002-sims2000.npz"
     )
@@ -47,6 +49,52 @@ def test_random_checkpoint_path_stays_under_ez_flywheel_dir() -> None:
     assert random_checkpoint_path(rows=4, cols=4, seed=7) == Path(
         "runs/ez-flywheel/ez-random-policy-value-4x4-seed7.npz"
     )
+
+
+def test_replay_game_paths_select_newest_matching_games_until_window(tmp_path: Path) -> None:
+    def write_games(name: str, games: int) -> Path:
+        path = tmp_path / name
+        path.write_text("".join("{}\n" for _ in range(games)), encoding="utf8")
+        return path
+
+    write_games("ez-self-play-4x4-iter001-games2-sims2000.jsonl", 2)
+    iter2 = write_games("ez-self-play-4x4-iter002-games3-sims2000.jsonl", 3)
+    iter3 = write_games("ez-self-play-4x4-iter003-games4-sims2000.jsonl", 4)
+    write_games("ez-self-play-3x3-iter004-games9-sims2000.jsonl", 9)
+    write_games("ez-self-play-4x4-iter004-games9-sims100.jsonl", 9)
+    config = EzFlywheelConfig(
+        iteration=4,
+        run_dir=tmp_path,
+        games=2,
+        replay_window_games=7,
+        simulations=2_000,
+    )
+
+    assert replay_game_paths(config) == [ez_flywheel_paths(config).games, iter3, iter2]
+
+
+def test_ez_flywheel_command_plan_uses_replay_window_inputs(tmp_path: Path) -> None:
+    previous = tmp_path / "ez-self-play-4x4-iter001-games25-sims2000.jsonl"
+    previous.write_text("{}\n", encoding="utf8")
+    config = EzFlywheelConfig(iteration=2, run_dir=tmp_path, replay_window_games=26)
+
+    commands = command_plan(config, state=EzFlywheelState(champion_checkpoint=CHAMPION))
+
+    build_examples = commands[1]
+    out_index = build_examples.index("--out")
+    assert build_examples[3:out_index] == [str(ez_flywheel_paths(config).games), str(previous)]
+
+
+def test_ez_flywheel_command_plan_can_skip_champion_eval() -> None:
+    config = EzFlywheelConfig(iteration=1, eval_champion_games=0)
+
+    commands = command_plan(config, state=EzFlywheelState(champion_checkpoint=CHAMPION))
+
+    assert [command[2] for command in commands] == [
+        "dots_boxes_mcts.ez_guided_self_play",
+        "dots_boxes_mcts.train",
+        "dots_boxes_mcts.train",
+    ]
 
 
 def test_ez_flywheel_first_iteration_uses_current_checkpoint_for_guided_self_play_and_training() -> None:
@@ -91,7 +139,6 @@ def test_ez_flywheel_command_plan_skips_optional_diagnostics_by_default() -> Non
         "dots_boxes_mcts.ez_guided_self_play",
         "dots_boxes_mcts.train",
         "dots_boxes_mcts.train",
-        "dots_boxes_mcts.ez_checkpoint_eval",
     ]
 
 
@@ -115,7 +162,7 @@ def test_ez_flywheel_command_plan_can_include_optional_diagnostics() -> None:
 
 
 def test_ez_flywheel_command_plan_passes_cache_entries_to_champion_eval() -> None:
-    config = EzFlywheelConfig(iteration=1, evaluator_cache_entries=1234)
+    config = EzFlywheelConfig(iteration=1, eval_champion_games=20, evaluator_cache_entries=1234)
 
     commands = command_plan(config, state=EzFlywheelState(champion_checkpoint=CHAMPION))
 
@@ -127,6 +174,7 @@ def test_ez_flywheel_command_plan_passes_cache_entries_to_champion_eval() -> Non
 def test_ez_flywheel_command_plan_can_use_cpp_mcts_backend() -> None:
     config = EzFlywheelConfig(
         iteration=1,
+        eval_champion_games=20,
         mcts_backend="cpp",
         mcts_batch_size=16,
         virtual_loss=0.5,
@@ -206,7 +254,7 @@ def test_unsafe_selection_rate_reads_matching_simulation_budget() -> None:
     assert unsafe_selection_rate(evaluation, 2_000) == 0.25
 
 
-def test_ez_flywheel_loop_rejects_then_promotes_by_champion_gate(
+def test_ez_flywheel_loop_continuously_advances_latest_checkpoint(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -271,6 +319,7 @@ def test_ez_flywheel_loop_rejects_then_promotes_by_champion_gate(
         duration=None,
         run_dir=tmp_path,
         games=1,
+        replay_window_games=2,
         rows=4,
         cols=4,
         simulations=2_000,
@@ -312,7 +361,11 @@ def test_ez_flywheel_loop_rejects_then_promotes_by_champion_gate(
     assert state.champion_checkpoint == created_checkpoints[-1]
     assert state.latest_candidate_checkpoint == created_checkpoints[-1]
     assert state.last_evaluation is not None
-    assert state.last_evaluation["decision"] == "promoted"
+    assert state.last_evaluation["decision"] == "advanced"
+    assert state.last_evaluation["championSummary"] == {
+        "winRate": 0.60,
+        "averageScoreMargin": 0.5,
+    }
 
 
 def test_ez_flywheel_loop_can_stop_after_duration(
@@ -347,6 +400,7 @@ def test_ez_flywheel_loop_can_stop_after_duration(
         duration="1s",
         run_dir=tmp_path,
         games=1,
+        replay_window_games=1000,
         rows=4,
         cols=4,
         simulations=2_000,
