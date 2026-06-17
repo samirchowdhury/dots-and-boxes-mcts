@@ -158,6 +158,14 @@ Use the latest checkpoint from `runs/ez-flywheel/`. `--alternate-players`
 splits games across first and second player, which matters a lot in Dots and
 Boxes.
 
+The eval runner writes per-game records to `--out` and prints the aggregate
+summary to the terminal. To recompute the summary later from the JSONL file:
+
+```bash
+uv run python -m dots_boxes_mcts.summarize_external_eval \
+  runs/dotsandboxes-org/ez-flywheel/iter${ITER}-vs-dotsandboxes-org-4x4-think${THINK_TAG}.jsonl
+```
+
 ### Port to C++
 
 In my experience, training to even 90+ iterations is not sufficient to overcome the dotsandboxes.org bot.
