@@ -124,6 +124,22 @@ def test_ez_flywheel_command_plan_passes_cache_entries_to_champion_eval() -> Non
     assert eval_command[eval_command.index("--evaluator-cache-entries") + 1] == "1234"
 
 
+def test_ez_flywheel_command_plan_can_use_cpp_mcts_backend() -> None:
+    config = EzFlywheelConfig(
+        iteration=1,
+        mcts_backend="cpp",
+        mcts_batch_size=16,
+        virtual_loss=0.5,
+    )
+
+    commands = command_plan(config, state=EzFlywheelState(champion_checkpoint=CHAMPION))
+
+    for command in [commands[0], commands[3]]:
+        assert command[command.index("--mcts-backend") + 1] == "cpp"
+        assert command[command.index("--mcts-batch-size") + 1] == "16"
+        assert command[command.index("--virtual-loss") + 1] == "0.5"
+
+
 def test_ez_flywheel_state_round_trips_independently(tmp_path: Path) -> None:
     state = EzFlywheelState(
         next_iteration=3,

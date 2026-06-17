@@ -3,6 +3,8 @@
 .pytest_cache/
 __pycache__/
 *.pyc
+*.so
+*.dSYM/
 runs/*
 !runs/.gitkeep
 !runs/dotsandboxes-org/

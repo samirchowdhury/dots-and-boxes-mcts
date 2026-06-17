@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from dots_boxes_mcts.ez_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.fast_ez_mcts import FastNetworkGuidedMCTS
 from dots_boxes_mcts.game import GameState, apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import SearchResult, result_payload
 from dots_boxes_mcts.self_play import write_jsonl
@@ -33,6 +34,9 @@ def play_guided_self_play_game(
     device: str = "cpu",
     reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
+    mcts_backend: str = "python",
+    mcts_batch_size: int = 8,
+    virtual_loss: float = 1.0,
     progress_logger: ProgressLogger | None = None,
     game_index: int | None = None,
     total_games: int | None = None,
@@ -49,13 +53,16 @@ def play_guided_self_play_game(
         if evaluator_cache_entries > 0
         else network_evaluator
     )
-    searcher = NetworkGuidedMCTS(
+    searcher = make_network_guided_searcher(
         evaluator=evaluator,
+        backend=mcts_backend,
         simulations=simulations,
         c_puct=c_puct,
         seed=seed,
         root_dirichlet_alpha=root_dirichlet_alpha,
         root_exploration_fraction=root_exploration_fraction,
+        batch_size=mcts_batch_size,
+        virtual_loss=virtual_loss,
     )
     state = new_game(rows=rows, cols=cols)
     moves: list[str] = []
@@ -135,6 +142,9 @@ def play_guided_self_play_game(
         temperature_moves=temperature_moves,
         sampling_temperature=sampling_temperature,
         reuse_tree=reuse_tree,
+        mcts_backend=mcts_backend,
+        mcts_batch_size=mcts_batch_size,
+        virtual_loss=virtual_loss,
         decisions=decisions,
     )
 
@@ -154,6 +164,9 @@ def generate_guided_self_play_games(
     device: str = "cpu",
     reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
+    mcts_backend: str = "python",
+    mcts_batch_size: int = 8,
+    virtual_loss: float = 1.0,
     progress_logger: ProgressLogger | None = None,
 ) -> list[dict]:
     records: list[dict] = []
@@ -172,6 +185,9 @@ def generate_guided_self_play_games(
             device=device,
             reuse_tree=reuse_tree,
             evaluator_cache_entries=evaluator_cache_entries,
+            mcts_backend=mcts_backend,
+            mcts_batch_size=mcts_batch_size,
+            virtual_loss=virtual_loss,
             progress_logger=progress_logger,
             game_index=game_index,
             total_games=games,
@@ -179,6 +195,41 @@ def generate_guided_self_play_games(
         record["gameIndex"] = game_index
         records.append(record)
     return records
+
+
+def make_network_guided_searcher(
+    *,
+    evaluator,
+    backend: str,
+    simulations: int,
+    c_puct: float,
+    seed: int,
+    root_dirichlet_alpha: float,
+    root_exploration_fraction: float,
+    batch_size: int,
+    virtual_loss: float,
+):
+    if backend == "python":
+        return NetworkGuidedMCTS(
+            evaluator=evaluator,
+            simulations=simulations,
+            c_puct=c_puct,
+            seed=seed,
+            root_dirichlet_alpha=root_dirichlet_alpha,
+            root_exploration_fraction=root_exploration_fraction,
+        )
+    if backend == "cpp":
+        return FastNetworkGuidedMCTS(
+            evaluator=evaluator,
+            simulations=simulations,
+            c_puct=c_puct,
+            seed=seed,
+            root_dirichlet_alpha=root_dirichlet_alpha,
+            root_exploration_fraction=root_exploration_fraction,
+            batch_size=batch_size,
+            virtual_loss=virtual_loss,
+        )
+    raise ValueError(f"Unknown network-guided MCTS backend: {backend}")
 
 
 def select_self_play_move(
@@ -295,6 +346,9 @@ def run_metadata(
     debug: bool,
     reuse_tree: bool,
     evaluator_cache_entries: int,
+    mcts_backend: str = "python",
+    mcts_batch_size: int = 8,
+    virtual_loss: float = 1.0,
 ) -> dict:
     return {
         "output": str(out_path),
@@ -314,6 +368,9 @@ def run_metadata(
         "debug": debug,
         "reuseTree": reuse_tree,
         "evaluatorCacheEntries": evaluator_cache_entries,
+        "mctsBackend": mcts_backend,
+        "mctsBatchSize": mcts_batch_size,
+        "virtualLoss": virtual_loss,
     }
 
 
@@ -371,6 +428,9 @@ def guided_self_play_record(
     temperature_moves: int,
     sampling_temperature: float,
     reuse_tree: bool,
+    mcts_backend: str,
+    mcts_batch_size: int,
+    virtual_loss: float,
     decisions: list[dict],
 ) -> dict:
     return {
@@ -390,6 +450,9 @@ def guided_self_play_record(
         "temperatureMoves": temperature_moves,
         "samplingTemperature": sampling_temperature,
         "reuseTree": reuse_tree,
+        "mctsBackend": mcts_backend,
+        "mctsBatchSize": mcts_batch_size,
+        "virtualLoss": virtual_loss,
         "moves": moves,
         "decisions": decisions,
         "finalScores": [state.scores[0], state.scores[1]],
@@ -414,6 +477,9 @@ def main() -> None:
     parser.add_argument("--temperature-moves", type=int, default=DEFAULT_TEMPERATURE_MOVES)
     parser.add_argument("--sampling-temperature", type=float, default=DEFAULT_SAMPLING_TEMPERATURE)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
+    parser.add_argument("--mcts-backend", choices=["python", "cpp"], default="python")
+    parser.add_argument("--mcts-batch-size", type=int, default=8)
+    parser.add_argument("--virtual-loss", type=float, default=1.0)
     parser.add_argument(
         "--enable-tree-reuse",
         action="store_true",
@@ -457,6 +523,10 @@ def main() -> None:
         raise SystemExit("--sampling-temperature must be positive")
     if args.evaluator_cache_entries < 0:
         raise SystemExit("--evaluator-cache-entries must be non-negative")
+    if args.mcts_batch_size < 1:
+        raise SystemExit("--mcts-batch-size must be at least 1")
+    if args.virtual_loss < 0:
+        raise SystemExit("--virtual-loss must be non-negative")
 
     out_path = args.out or default_output_path(
         rows=args.rows,
@@ -488,6 +558,9 @@ def main() -> None:
         debug=args.debug,
         reuse_tree=args.enable_tree_reuse and not args.disable_tree_reuse,
         evaluator_cache_entries=args.evaluator_cache_entries,
+        mcts_backend=args.mcts_backend,
+        mcts_batch_size=args.mcts_batch_size,
+        virtual_loss=args.virtual_loss,
     )
     records = generate_guided_self_play_games(
         checkpoint=args.checkpoint,
@@ -504,6 +577,9 @@ def main() -> None:
         device=args.mlx_device,
         reuse_tree=args.enable_tree_reuse and not args.disable_tree_reuse,
         evaluator_cache_entries=args.evaluator_cache_entries,
+        mcts_backend=args.mcts_backend,
+        mcts_batch_size=args.mcts_batch_size,
+        virtual_loss=args.virtual_loss,
         progress_logger=(lambda message: print(message, file=sys.stderr)) if args.debug else None,
     )
     write_jsonl(records, out_path)

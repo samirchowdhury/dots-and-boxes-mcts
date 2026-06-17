@@ -6,6 +6,7 @@ import random
 from pathlib import Path
 
 from dots_boxes_mcts.ez_mcts import CachedNetworkEvaluator, NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.fast_ez_mcts import FastNetworkGuidedMCTS
 from dots_boxes_mcts.game import GameState, apply_move, legal_moves, new_game, state_snapshot
 from dots_boxes_mcts.mcts import result_payload
 from dots_boxes_mcts.mcts_vs_random import summarize_records
@@ -28,6 +29,9 @@ def play_checkpoint_match_game(
     device: str = "cpu",
     reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
+    mcts_backend: str = "python",
+    mcts_batch_size: int = 8,
+    virtual_loss: float = 1.0,
 ) -> dict:
     if candidate_player not in {0, 1}:
         raise ValueError("candidate_player must be 0 or 1")
@@ -48,11 +52,14 @@ def play_checkpoint_match_game(
         for player, evaluator in network_evaluators.items()
     }
     searchers = {
-        player: NetworkGuidedMCTS(
+        player: make_network_guided_searcher(
             evaluator=evaluator,
+            backend=mcts_backend,
             simulations=simulations,
             c_puct=c_puct,
             seed=seed * 2 + player,
+            batch_size=mcts_batch_size,
+            virtual_loss=virtual_loss,
         )
         for player, evaluator in evaluators.items()
     }
@@ -108,6 +115,9 @@ def play_checkpoint_match_game(
         opening_moves=opening_moves,
         reuse_tree=reuse_tree,
         evaluator_cache_entries=evaluator_cache_entries,
+        mcts_backend=mcts_backend,
+        mcts_batch_size=mcts_batch_size,
+        virtual_loss=virtual_loss,
         decisions=decisions,
     )
 
@@ -126,6 +136,9 @@ def generate_checkpoint_match_games(
     alternate_colors: bool = True,
     reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
+    mcts_backend: str = "python",
+    mcts_batch_size: int = 8,
+    virtual_loss: float = 1.0,
 ) -> list[dict]:
     records: list[dict] = []
     for game_index in range(games):
@@ -143,10 +156,42 @@ def generate_checkpoint_match_games(
             device=device,
             reuse_tree=reuse_tree,
             evaluator_cache_entries=evaluator_cache_entries,
+            mcts_backend=mcts_backend,
+            mcts_batch_size=mcts_batch_size,
+            virtual_loss=virtual_loss,
         )
         record["gameIndex"] = game_index
         records.append(record)
     return records
+
+
+def make_network_guided_searcher(
+    *,
+    evaluator,
+    backend: str,
+    simulations: int,
+    c_puct: float,
+    seed: int,
+    batch_size: int,
+    virtual_loss: float,
+):
+    if backend == "python":
+        return NetworkGuidedMCTS(
+            evaluator=evaluator,
+            simulations=simulations,
+            c_puct=c_puct,
+            seed=seed,
+        )
+    if backend == "cpp":
+        return FastNetworkGuidedMCTS(
+            evaluator=evaluator,
+            simulations=simulations,
+            c_puct=c_puct,
+            seed=seed,
+            batch_size=batch_size,
+            virtual_loss=virtual_loss,
+        )
+    raise ValueError(f"Unknown network-guided MCTS backend: {backend}")
 
 
 def summarize_checkpoint_match_records(records: list[dict]) -> dict:
@@ -196,6 +241,9 @@ def checkpoint_match_record(
     opening_moves: list[str] | None = None,
     reuse_tree: bool = False,
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES,
+    mcts_backend: str = "python",
+    mcts_batch_size: int = 8,
+    virtual_loss: float = 1.0,
 ) -> dict:
     baseline_player = 1 - candidate_player
     return {
@@ -214,6 +262,9 @@ def checkpoint_match_record(
         "cPuct": c_puct,
         "reuseTree": reuse_tree,
         "evaluatorCacheEntries": evaluator_cache_entries,
+        "mctsBackend": mcts_backend,
+        "mctsBatchSize": mcts_batch_size,
+        "virtualLoss": virtual_loss,
         "openingRandomPlies": opening_random_plies,
         "openingMoves": opening_moves or [],
         "moves": moves,
@@ -239,6 +290,9 @@ def main() -> None:
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--opening-random-plies", type=int, default=2)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
+    parser.add_argument("--mcts-backend", choices=["python", "cpp"], default="python")
+    parser.add_argument("--mcts-batch-size", type=int, default=8)
+    parser.add_argument("--virtual-loss", type=float, default=1.0)
     parser.add_argument("--no-alternate-colors", action="store_true")
     parser.add_argument(
         "--enable-tree-reuse",
@@ -254,6 +308,10 @@ def main() -> None:
         raise SystemExit("--games must be at least 1")
     if args.evaluator_cache_entries < 0:
         raise SystemExit("--evaluator-cache-entries must be non-negative")
+    if args.mcts_batch_size < 1:
+        raise SystemExit("--mcts-batch-size must be at least 1")
+    if args.virtual_loss < 0:
+        raise SystemExit("--virtual-loss must be non-negative")
 
     records = generate_checkpoint_match_games(
         candidate_checkpoint=args.candidate,
@@ -269,6 +327,9 @@ def main() -> None:
         alternate_colors=not args.no_alternate_colors,
         reuse_tree=args.enable_tree_reuse and not args.disable_tree_reuse,
         evaluator_cache_entries=args.evaluator_cache_entries,
+        mcts_backend=args.mcts_backend,
+        mcts_batch_size=args.mcts_batch_size,
+        virtual_loss=args.virtual_loss,
     )
     write_jsonl(records, args.out)
     print(json.dumps(summarize_checkpoint_match_records(records), sort_keys=True))

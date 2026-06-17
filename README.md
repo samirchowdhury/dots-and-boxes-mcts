@@ -161,3 +161,62 @@ uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
 Use the latest promoted checkpoint from `runs/ez-flywheel/`. `--alternate-players`
 splits games across first and second player, which matters a lot in Dots and
 Boxes.
+
+### Port to C++
+
+In my experience, training to even 90+ iterations is not sufficient to overcome the dotsandboxes.org bot.
+Porting to C++ allows us to get a 30x speedup, which is crucial for getting sufficient self-play.
+
+Build the optional C++ network-guided MCTS backend for the active Python
+environment:
+
+```bash
+pyenv activate data
+uv run python -m dots_boxes_mcts.build_fast_ez_mcts
+```
+
+If this is a fresh flywheel run, initialize the champion checkpoint once:
+
+```bash
+pyenv activate data
+uv run python -m dots_boxes_mcts.ez_flywheel init-state \
+  --random-checkpoint \
+  --random-seed 1
+```
+
+Run the C++ flywheel for eight hours. Tree reuse is off by default; this uses
+fresh per-move C++ searches with batched leaf evaluation and virtual loss.
+
+```bash
+pyenv activate data
+uv run python -m dots_boxes_mcts.ez_flywheel loop \
+  --duration 8h \
+  --mcts-backend cpp \
+  --mcts-batch-size 8 \
+  --virtual-loss 1.0 \
+  --mlx-device gpu \
+  --simulations 2000 \
+  --eval-champion-simulations 2000 \
+  --min-win-rate 0.55 \
+  --min-average-score-margin 0.0
+```
+
+Check progress or compare the Python and C++ search paths:
+
+```bash
+pyenv activate data
+uv run python -m dots_boxes_mcts.ez_flywheel status
+
+uv run python -m dots_boxes_mcts.profile_ez_mcts \
+  --backend both \
+  --rows 4 \
+  --cols 4 \
+  --simulations 200 \
+  --repeat 3 \
+  --batch-size 8 \
+  --virtual-loss 1.0
+```
+
+## Resources
+
+[^1]: Tian, Yuandong, et al. "Elf opengo: An analysis and open reimplementation of alphazero." International conference on machine learning. PMLR, 2019.

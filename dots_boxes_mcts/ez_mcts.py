@@ -41,18 +41,44 @@ class NetworkEvaluator:
         self.mx = require_mlx(device=device)
 
     def evaluate(self, state: GameState) -> tuple[dict[str, float], float]:
-        encoded = encode_snapshot(state_snapshot(state))
-        tensor = np.moveaxis(encoded.tensor, 0, -1)[None, ...].astype(np.float32)
-        legal_mask = encoded.legal_mask[None, ...].astype(np.float32)
+        return self.evaluate_snapshot(state_snapshot(state))
+
+    def evaluate_snapshot(self, snapshot: dict) -> tuple[dict[str, float], float]:
+        return self.evaluate_many_snapshots([snapshot])[0]
+
+    def evaluate_many_snapshots(
+        self,
+        snapshots: list[dict],
+    ) -> list[tuple[dict[str, float], float]]:
+        if not snapshots:
+            return []
+        encoded_positions = [encode_snapshot(snapshot) for snapshot in snapshots]
+        tensor = np.stack(
+            [
+                np.moveaxis(encoded.tensor, 0, -1).astype(np.float32)
+                for encoded in encoded_positions
+            ]
+        )
+        legal_mask = np.stack(
+            [encoded.legal_mask.astype(np.float32) for encoded in encoded_positions]
+        )
         policy, value = self.model.forward(self.mx.array(tensor), self.mx.array(legal_mask))
         self.mx.eval(policy, value)
-        probabilities = np.array(policy)[0]
-        priors = {
-            move: float(probabilities[index])
-            for index, move in enumerate(encoded.action_ids)
-            if legal_mask[0, index] > 0
-        }
-        return priors, float(np.array(value)[0])
+        probabilities_by_position = np.array(policy)
+        values = np.array(value)
+        return [
+            (
+                {
+                    move: float(probabilities[index])
+                    for index, move in enumerate(encoded.action_ids)
+                    if legal_mask[position_index, index] > 0
+                },
+                float(values[position_index]),
+            )
+            for position_index, (encoded, probabilities) in enumerate(
+                zip(encoded_positions, probabilities_by_position, strict=True)
+            )
+        ]
 
 
 class CachedNetworkEvaluator:
@@ -71,6 +97,76 @@ class CachedNetworkEvaluator:
 
     def evaluate(self, state: GameState) -> tuple[dict[str, float], float]:
         key = state_key(state)
+        return self._evaluate_keyed(key, lambda: self.evaluator.evaluate(state))
+
+    def evaluate_snapshot(self, snapshot: dict) -> tuple[dict[str, float], float]:
+        key = snapshot_key(snapshot)
+        if hasattr(self.evaluator, "evaluate_snapshot"):
+            return self._evaluate_keyed(
+                key,
+                lambda: self.evaluator.evaluate_snapshot(snapshot),  # type: ignore[attr-defined]
+            )
+        return self._evaluate_keyed(
+            key,
+            lambda: self.evaluator.evaluate(game_state_from_snapshot(snapshot)),
+        )
+
+    def evaluate_many_snapshots(
+        self,
+        snapshots: list[dict],
+    ) -> list[tuple[dict[str, float], float]]:
+        if not snapshots:
+            return []
+        results: list[tuple[dict[str, float], float] | None] = [None] * len(snapshots)
+        miss_indices: list[int] = []
+        miss_snapshots: list[dict] = []
+        miss_keys: list[tuple] = []
+        for index, snapshot in enumerate(snapshots):
+            key = snapshot_key(snapshot)
+            cached = self.cache.get(key)
+            if cached is not None:
+                self.cache.move_to_end(key)
+                self.hits += 1
+                priors, value = cached
+                results[index] = (dict(priors), value)
+            else:
+                miss_indices.append(index)
+                miss_snapshots.append(snapshot)
+                miss_keys.append(key)
+
+        if miss_snapshots:
+            if hasattr(self.evaluator, "evaluate_many_snapshots"):
+                missed_results = self.evaluator.evaluate_many_snapshots(
+                    miss_snapshots
+                )  # type: ignore[attr-defined]
+            elif hasattr(self.evaluator, "evaluate_snapshot"):
+                missed_results = [
+                    self.evaluator.evaluate_snapshot(snapshot)  # type: ignore[attr-defined]
+                    for snapshot in miss_snapshots
+                ]
+            else:
+                missed_results = [
+                    self.evaluator.evaluate(game_state_from_snapshot(snapshot))
+                    for snapshot in miss_snapshots
+                ]
+            for index, key, result in zip(
+                miss_indices,
+                miss_keys,
+                missed_results,
+                strict=True,
+            ):
+                self.misses += 1
+                self._maybe_clear_mlx_cache()
+                self._store(key, result[0], result[1])
+                results[index] = result
+
+        return [result for result in results if result is not None]
+
+    def _evaluate_keyed(
+        self,
+        key: tuple,
+        evaluate: Callable[[], tuple[dict[str, float], float]],
+    ) -> tuple[dict[str, float], float]:
         cached = self.cache.get(key)
         if cached is not None:
             self.cache.move_to_end(key)
@@ -78,26 +174,62 @@ class CachedNetworkEvaluator:
             priors, value = cached
             return dict(priors), value
 
-        priors, value = self.evaluator.evaluate(state)
+        priors, value = evaluate()
         self.misses += 1
-        if self.clear_mlx_cache_every > 0 and self.misses % self.clear_mlx_cache_every == 0:
-            self.evaluator.mx.clear_cache()
-            self.evaluator.mx.clear_streams()
+        self._maybe_clear_mlx_cache()
+        self._store(key, priors, value)
+        return priors, value
+
+    def _maybe_clear_mlx_cache(self) -> None:
+        if self.clear_mlx_cache_every <= 0 or self.misses % self.clear_mlx_cache_every != 0:
+            return
+        mx = getattr(self.evaluator, "mx", None)
+        if mx is not None:
+            mx.clear_cache()
+            mx.clear_streams()
+
+    def _store(self, key: tuple, priors: dict[str, float], value: float) -> None:
         if self.max_entries > 0:
             self.cache[key] = (tuple(sorted(priors.items())), value)
             if len(self.cache) > self.max_entries:
                 self.cache.popitem(last=False)
-        return priors, value
 
 
 def state_key(state: GameState) -> tuple:
+    return snapshot_key(state_snapshot(state))
+
+
+def snapshot_key(snapshot: dict) -> tuple:
     return (
-        state.rows,
-        state.cols,
-        state.current_player,
-        tuple(sorted(state.edges)),
-        state.boxes,
-        state.scores,
+        int(snapshot["rows"]),
+        int(snapshot["cols"]),
+        int(snapshot["currentPlayer"]),
+        tuple(sorted(str(edge) for edge in snapshot["edges"])),
+        tuple(
+            tuple(None if cell is None else int(cell) for cell in row)
+            for row in snapshot["boxes"]
+        ),
+        (int(snapshot["scores"][0]), int(snapshot["scores"][1])),
+    )
+
+
+def game_state_from_snapshot(snapshot: dict) -> GameState:
+    return GameState(
+        rows=int(snapshot["rows"]),
+        cols=int(snapshot["cols"]),
+        current_player=int(snapshot["currentPlayer"]),
+        edges=frozenset(str(edge) for edge in snapshot["edges"]),
+        edge_owners=tuple(
+            (str(edge), int(owner))
+            for edge, owner in snapshot.get("edgeOwners", [])
+        ),
+        boxes=tuple(
+            tuple(None if cell is None else int(cell) for cell in row)
+            for row in snapshot["boxes"]
+        ),
+        scores=(int(snapshot["scores"][0]), int(snapshot["scores"][1])),
+        terminal=bool(snapshot.get("terminal", False)),
+        winner=snapshot.get("winner"),
     )
 
 

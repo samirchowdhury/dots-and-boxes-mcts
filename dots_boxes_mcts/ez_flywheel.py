@@ -67,6 +67,9 @@ class EzFlywheelConfig:
     temperature_moves: int = 8
     sampling_temperature: float = 1.0
     evaluator_cache_entries: int = DEFAULT_EVALUATOR_CACHE_ENTRIES
+    mcts_backend: str = "python"
+    mcts_batch_size: int = 8
+    virtual_loss: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -296,6 +299,12 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
             config.mlx_device,
             "--evaluator-cache-entries",
             str(config.evaluator_cache_entries),
+            "--mcts-backend",
+            config.mcts_backend,
+            "--mcts-batch-size",
+            str(config.mcts_batch_size),
+            "--virtual-loss",
+            str(config.virtual_loss),
             "--out",
             str(paths.games),
             "--overwrite",
@@ -404,6 +413,12 @@ def command_plan(config: EzFlywheelConfig, state: EzFlywheelState | None = None)
                 config.mlx_device,
                 "--evaluator-cache-entries",
                 str(config.evaluator_cache_entries),
+                "--mcts-backend",
+                config.mcts_backend,
+                "--mcts-batch-size",
+                str(config.mcts_batch_size),
+                "--virtual-loss",
+                str(config.virtual_loss),
                 "--out",
                 str(paths.eval_champion),
             ]
@@ -803,10 +818,19 @@ def add_shared_next_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=DEFAULT_EVALUATOR_CACHE_ENTRIES,
     )
+    parser.add_argument("--mcts-backend", choices=["python", "cpp"], default="python")
+    parser.add_argument("--mcts-batch-size", type=int, default=8)
+    parser.add_argument("--virtual-loss", type=float, default=1.0)
     parser.add_argument("--quiet", action="store_true")
 
 
 def config_from_args(args: argparse.Namespace, *, iteration: int) -> EzFlywheelConfig:
+    mcts_batch_size = getattr(args, "mcts_batch_size", 8)
+    virtual_loss = getattr(args, "virtual_loss", 1.0)
+    if mcts_batch_size < 1:
+        raise SystemExit("--mcts-batch-size must be at least 1")
+    if virtual_loss < 0:
+        raise SystemExit("--virtual-loss must be non-negative")
     return EzFlywheelConfig(
         iteration=iteration,
         run_dir=args.run_dir,
@@ -837,6 +861,9 @@ def config_from_args(args: argparse.Namespace, *, iteration: int) -> EzFlywheelC
         temperature_moves=args.temperature_moves,
         sampling_temperature=args.sampling_temperature,
         evaluator_cache_entries=args.evaluator_cache_entries,
+        mcts_backend=getattr(args, "mcts_backend", "python"),
+        mcts_batch_size=mcts_batch_size,
+        virtual_loss=virtual_loss,
     )
 
 
