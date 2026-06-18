@@ -232,6 +232,35 @@ uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --out runs/dotsandboxes-org/ez-flywheel/iter${ITER}-cpp-vs-dotsandboxes-org-4x4-think${THINK_TAG}.jsonl
 ```
 
+### Collect a dotsandboxes.org Capability Frontier
+
+Run a resumable broad-grid sweep over checkpoint iteration, EpsilonZero
+simulations, and dotsandboxes.org thinking time. This collects the raw games for
+frontier/heatmap analysis; rerun the same command after an interruption and it
+will skip completed games in `runs/dotsandboxes-org/ez-flywheel-grid/games.jsonl`.
+
+```bash
+uv run python -m dots_boxes_mcts.dotsandboxes_org_grid_eval
+```
+
+To extend any axis later, you can run:
+
+```bash
+uv run python -m dots_boxes_mcts.dotsandboxes_org_grid_eval \
+  --iters 10,20,50,68,92,110,152,194,250,300,350,388,450,500,542,600 \
+  --simulations 250,500,1000,2000,5000,10000,20000 \
+  --site-think-times 0.05,0.1,0.25,0.5,1.0,2.0,4.0
+```
+
+After the grid completes, flatten it into CSVs and an SVG heatmap:
+
+```bash
+uv run python -m dots_boxes_mcts.dotsandboxes_org_grid_report
+```
+
+The report writes per-game rows, paired role cells, frontier thresholds, and
+combined-role heatmaps under `runs/dotsandboxes-org/ez-flywheel-grid/report/`.
+
 ## Resources
 
 [^1]: Tian, Yuandong, et al. "Elf opengo: An analysis and open reimplementation of alphazero." International conference on machine learning. PMLR, 2019.
