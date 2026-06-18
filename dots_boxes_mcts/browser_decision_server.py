@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from dots_boxes_mcts.ez_mcts import NetworkEvaluator, NetworkGuidedMCTS
+from dots_boxes_mcts.fast_ez_mcts import FastNetworkGuidedMCTS
 from dots_boxes_mcts.fast_mcts import FastUCTMCTS
 from dots_boxes_mcts.game import apply_move, new_game, state_snapshot
 from dots_boxes_mcts.mcts import UCTMCTS, result_payload
@@ -181,12 +182,24 @@ def searcher_from_payload(
     if checkpoint:
         device = payload["mlxDevice"]
         evaluator = cached_evaluator(checkpoint=checkpoint, device=device)
-        return NetworkGuidedMCTS(
-            evaluator=evaluator,
-            simulations=simulations,
-            c_puct=float(payload["cPuct"]),
-            seed=seed,
-        )
+        mcts_backend = payload.get("mctsBackend", "python")
+        if mcts_backend == "python":
+            return NetworkGuidedMCTS(
+                evaluator=evaluator,
+                simulations=simulations,
+                c_puct=float(payload["cPuct"]),
+                seed=seed,
+            )
+        if mcts_backend == "cpp":
+            return FastNetworkGuidedMCTS(
+                evaluator=evaluator,
+                simulations=simulations,
+                c_puct=float(payload["cPuct"]),
+                seed=seed,
+                batch_size=int(payload.get("mctsBatchSize", 1)),
+                virtual_loss=float(payload.get("virtualLoss", 1.0)),
+            )
+        raise ValueError(f"Unknown network-guided MCTS backend: {mcts_backend}")
     backend = payload.get("backend", "numba")
     if backend == "numba":
         return FastUCTMCTS(simulations=simulations, seed=seed)

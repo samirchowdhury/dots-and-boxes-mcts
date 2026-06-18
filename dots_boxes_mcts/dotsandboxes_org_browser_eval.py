@@ -53,6 +53,9 @@ def generate_dotsandboxes_org_games(
     c_puct: float = 1.5,
     mlx_device: str = "cpu",
     backend: str = "numba",
+    mcts_backend: str = "python",
+    mcts_batch_size: int = 1,
+    virtual_loss: float = 1.0,
     our_player: int = 0,
     alternate_players: bool = False,
     headless: bool = False,
@@ -112,6 +115,9 @@ def generate_dotsandboxes_org_games(
                     c_puct=c_puct,
                     mlx_device=mlx_device,
                     backend=backend,
+                    mcts_backend=mcts_backend,
+                    mcts_batch_size=mcts_batch_size,
+                    virtual_loss=virtual_loss,
                     our_player=game_our_player,
                     site_url=site_url,
                     site_think_time=site_think_time,
@@ -149,6 +155,9 @@ def play_dotsandboxes_org_game(
     c_puct: float,
     mlx_device: str,
     backend: str,
+    mcts_backend: str,
+    mcts_batch_size: int,
+    virtual_loss: float,
     our_player: int,
     site_url: str = DOTSANDBOXES_ORG_URL,
     site_think_time: float = DEFAULT_SITE_THINK_TIME,
@@ -192,6 +201,9 @@ def play_dotsandboxes_org_game(
         "cPuct": c_puct,
         "mlxDevice": mlx_device,
         "backend": backend,
+        "mctsBackend": mcts_backend,
+        "mctsBatchSize": mcts_batch_size,
+        "virtualLoss": virtual_loss,
         "our_player": our_player,
         "opponent": DOTSANDBOXES_ORG_OPPONENT,
         "source": DOTSANDBOXES_ORG_OPPONENT,
@@ -282,6 +294,9 @@ def play_dotsandboxes_org_game(
         record["checkpoint"] = checkpoint_value
         record["cPuct"] = c_puct
         record["mlxDevice"] = mlx_device
+        record["mctsBackend"] = mcts_backend
+        record["mctsBatchSize"] = mcts_batch_size
+        record["virtualLoss"] = virtual_loss
     if recording:
         record["botDisplayName"] = recording.bot_display_name
     if recording and recording.captions:
@@ -642,6 +657,9 @@ def main() -> None:
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--backend", choices=["python", "numba"], default="numba")
+    parser.add_argument("--mcts-backend", choices=["python", "cpp"], default="python")
+    parser.add_argument("--mcts-batch-size", type=int, default=1)
+    parser.add_argument("--virtual-loss", type=float, default=1.0)
     parser.add_argument("--our-player", type=int, choices=[0, 1], default=0)
     parser.add_argument("--alternate-players", action="store_true")
     parser.add_argument("--seed", type=int, default=1)
@@ -706,6 +724,10 @@ def main() -> None:
         raise SystemExit("--site-think-time must be non-negative")
     if args.opening_top_k < 1:
         raise SystemExit("--opening-top-k must be at least 1")
+    if args.mcts_batch_size < 1:
+        raise SystemExit("--mcts-batch-size must be at least 1")
+    if args.virtual_loss < 0:
+        raise SystemExit("--virtual-loss must be non-negative")
     validate_dotsandboxes_org_board_size(rows=args.rows, cols=args.cols)
 
     recording = None
@@ -730,6 +752,9 @@ def main() -> None:
         c_puct=args.c_puct,
         mlx_device=args.mlx_device,
         backend=args.backend,
+        mcts_backend=args.mcts_backend,
+        mcts_batch_size=args.mcts_batch_size,
+        virtual_loss=args.virtual_loss,
         our_player=args.our_player,
         alternate_players=args.alternate_players,
         headless=args.headless,

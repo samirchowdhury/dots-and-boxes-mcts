@@ -160,6 +160,76 @@ def test_searcher_from_payload_can_use_python_mcts() -> None:
     assert isinstance(searcher, UCTMCTS)
 
 
+def test_searcher_from_payload_checkpoint_defaults_to_python_network_mcts(monkeypatch) -> None:
+    class FakeNetworkGuidedMCTS:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    evaluator = object()
+    monkeypatch.setattr(
+        "dots_boxes_mcts.browser_decision_server.cached_evaluator",
+        lambda checkpoint, device: evaluator,
+    )
+    monkeypatch.setattr(
+        "dots_boxes_mcts.browser_decision_server.NetworkGuidedMCTS",
+        FakeNetworkGuidedMCTS,
+    )
+
+    searcher = searcher_from_payload(
+        payload={"mlxDevice": "gpu", "cPuct": 1.25},
+        checkpoint="candidate.npz",
+        simulations=7,
+        seed=3,
+    )
+
+    assert isinstance(searcher, FakeNetworkGuidedMCTS)
+    assert searcher.kwargs == {
+        "evaluator": evaluator,
+        "simulations": 7,
+        "c_puct": 1.25,
+        "seed": 3,
+    }
+
+
+def test_searcher_from_payload_checkpoint_can_use_cpp_network_mcts(monkeypatch) -> None:
+    class FakeFastNetworkGuidedMCTS:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    evaluator = object()
+    monkeypatch.setattr(
+        "dots_boxes_mcts.browser_decision_server.cached_evaluator",
+        lambda checkpoint, device: evaluator,
+    )
+    monkeypatch.setattr(
+        "dots_boxes_mcts.browser_decision_server.FastNetworkGuidedMCTS",
+        FakeFastNetworkGuidedMCTS,
+    )
+
+    searcher = searcher_from_payload(
+        payload={
+            "mlxDevice": "gpu",
+            "cPuct": 1.25,
+            "mctsBackend": "cpp",
+            "mctsBatchSize": 8,
+            "virtualLoss": 0.5,
+        },
+        checkpoint="candidate.npz",
+        simulations=7,
+        seed=3,
+    )
+
+    assert isinstance(searcher, FakeFastNetworkGuidedMCTS)
+    assert searcher.kwargs == {
+        "evaluator": evaluator,
+        "simulations": 7,
+        "c_puct": 1.25,
+        "seed": 3,
+        "batch_size": 8,
+        "virtual_loss": 0.5,
+    }
+
+
 def test_select_eval_move_sweeps_top_k_only_on_first_controlled_move() -> None:
     result = SearchResult(
         move="best",

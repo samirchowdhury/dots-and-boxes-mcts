@@ -213,6 +213,25 @@ uv run python -m dots_boxes_mcts.profile_ez_mcts \
   --virtual-loss 1.0
 ```
 
+Evaluate a trained checkpoint against dotsandboxes.org with the C++ search path:
+
+```bash
+ITER=001
+THINK=0.25
+THINK_TAG=${THINK/./p}
+uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
+  --checkpoint runs/ez-flywheel/ez-policy-value-4x4-iter${ITER}-sims2000.npz \
+  --games 2 \
+  --simulations 2000 \
+  --mcts-backend cpp \
+  --mcts-batch-size 8 \
+  --virtual-loss 1.0 \
+  --mlx-device gpu \
+  --alternate-players \
+  --site-think-time "$THINK" \
+  --out runs/dotsandboxes-org/ez-flywheel/iter${ITER}-cpp-vs-dotsandboxes-org-4x4-think${THINK_TAG}.jsonl
+```
+
 ## Resources
 
 [^1]: Tian, Yuandong, et al. "Elf opengo: An analysis and open reimplementation of alphazero." International conference on machine learning. PMLR, 2019.
