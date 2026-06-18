@@ -193,11 +193,9 @@ function renderBoard(snapshot, lastMove) {
     line.setAttribute("y1", y1);
     line.setAttribute("x2", x2);
     line.setAttribute("y2", y2);
-    line.setAttribute("stroke-width", edgeId === lastMove ? "10" : "7");
+    line.setAttribute("stroke-width", "7");
 
-    if (edgeId === lastMove) {
-      line.setAttribute("class", "last-edge");
-    } else if (drawnEdges.has(edgeId)) {
+    if (drawnEdges.has(edgeId)) {
       const owner = edgeOwners.get(edgeId);
       line.setAttribute("class", "drawn-edge");
       line.setAttribute("stroke", colors[owner].edge);
