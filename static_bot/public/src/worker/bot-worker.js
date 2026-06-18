@@ -36,6 +36,7 @@ async function handleMessage(message) {
     const search = searchNetworkGuided(loaded, message.state, {
       simulations,
       cPuct: Number(message.cPuct || 1.5),
+      selector: wasmBackend?.available ? wasmBackend : null,
     });
     const elapsedMs = performance.now() - started;
     self.postMessage({

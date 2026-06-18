@@ -2,6 +2,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "smoke": "node tools/smoke_bot.mjs"
+    "build:wasm": "node tools/build_wasm.mjs",
+    "smoke": "node tools/smoke_bot.mjs",
+    "smoke:wasm": "node tools/smoke_wasm.mjs"
+  },
+  "devDependencies": {
+    "wabt": "^1.0.39"
   }
 }

@@ -26,11 +26,12 @@ export function searchNetworkGuided(model, state, options = {}) {
   }
   const simulations = Math.max(1, Number(options.simulations || 100));
   const cPuct = Math.max(0, Number(options.cPuct || 1.5));
+  const selector = options.selector || null;
   const root = new Node(state);
   expand(model, root);
 
   for (let simulation = 0; simulation < simulations; simulation += 1) {
-    runSimulation(model, root, cPuct);
+    runSimulation(model, root, cPuct, selector);
   }
 
   return {
@@ -41,12 +42,12 @@ export function searchNetworkGuided(model, state, options = {}) {
   };
 }
 
-function runSimulation(model, root, cPuct) {
+function runSimulation(model, root, cPuct, selector) {
   let node = root;
   const path = [];
 
   while (node.expanded() && !node.state.terminal) {
-    const child = selectChild(node, cPuct);
+    const child = selectChild(node, cPuct, selector);
     path.push([node, child]);
     node = child;
   }
@@ -71,7 +72,9 @@ function runSimulation(model, root, cPuct) {
 function expand(model, node) {
   const { priors, value } = evaluate(model, stateSnapshot(node.state));
   const moves = legalMoves(node.state);
-  node.children = moves.map((move) => new Node(nodeAfterMove(node.state, move), priors[move] || 0, move));
+  node.children = moves.map(
+    (move) => new Node(nodeAfterMove(node.state, move), priors[move] || 0, move),
+  );
 
   const totalPrior = node.children.reduce((total, child) => total + Math.max(0, child.prior), 0);
   if (node.children.length > 0 && totalPrior <= 0) {
@@ -91,7 +94,10 @@ function nodeAfterMove(state, move) {
   return applyMove(state, move);
 }
 
-function selectChild(node, cPuct) {
+function selectChild(node, cPuct, selector) {
+  if (selector && selector.available) {
+    return selector.selectChild(node.children, node.visits, cPuct);
+  }
   const sqrtParent = Math.sqrt(Math.max(node.visits, 1));
   let best = null;
   let bestScore = -Infinity;

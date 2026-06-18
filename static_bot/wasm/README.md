@@ -1,10 +1,20 @@
-# WASM Backend Slot
+# WASM Backend
 
-The app currently runs the network evaluator and MCTS in a Web Worker using
-portable JavaScript. The worker already accepts `backend: "wasm"` and falls back
-to JavaScript through `public/src/mcts/wasm-search.js`.
+The browser bot keeps neural-network inference in JavaScript and uses a small
+standalone WASM search kernel for PUCT child selection when the user chooses the
+WASM backend.
 
-When the JavaScript path is validated, the next step is to compile the hot MCTS
-tree/search loop here and keep the browser neural evaluator unchanged. The WASM
-boundary should use batched leaf evaluations so the compiled search core does
-not cross into JavaScript once per simulation.
+Build the module with:
+
+```bash
+npm --prefix static_bot run build:wasm
+```
+
+That compiles `search-kernel.wat` into
+`public/wasm/search-kernel.wasm`.
+
+This is intentionally a narrow first WASM boundary. It moves the repeated child
+selection math into WASM without forcing the model evaluator or tree data
+structure across the JS/WASM boundary. The next deeper port would move tree
+storage and batched leaf reservation into WASM while still calling the
+JavaScript neural evaluator in batches.
