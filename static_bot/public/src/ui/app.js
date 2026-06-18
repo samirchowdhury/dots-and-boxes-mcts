@@ -14,7 +14,6 @@ const lastMoveEl = document.querySelector("#lastMove");
 const resetButton = document.querySelector("#resetButton");
 const playerSelect = document.querySelector("#playerSelect");
 const simulationsInput = document.querySelector("#simulationsInput");
-const backendSelect = document.querySelector("#backendSelect");
 
 const botUrl = new URL("./assets/bots/latest.json", window.location.href).toString();
 const worker = new Worker(new URL("../worker/bot-worker.js", import.meta.url), { type: "module" });
@@ -108,7 +107,7 @@ function requestBotMove() {
     botUrl,
     state,
     simulations: clampedSimulations(),
-    backend: backendSelect.value,
+    backend: "wasm",
     cPuct: 1.5,
   });
 }

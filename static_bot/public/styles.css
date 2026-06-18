@@ -121,12 +121,15 @@ p {
   font-size: 1.05rem;
 }
 
-.workspace {
+.game-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 18px;
+  align-items: stretch;
+}
+
+.workspace {
   margin-top: 18px;
-  align-items: start;
 }
 
 .board-panel,
@@ -155,6 +158,7 @@ p {
   display: grid;
   gap: 16px;
   padding: 16px;
+  align-content: start;
 }
 
 .field {
@@ -240,7 +244,7 @@ input[type="number"] {
 
 @media (max-width: 880px) {
   .topbar,
-  .workspace {
+  .game-summary {
     grid-template-columns: 1fr;
     display: grid;
   }

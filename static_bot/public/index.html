@@ -16,28 +16,24 @@
         <button id="resetButton" class="button" type="button">New game</button>
       </header>
 
-      <section class="status-band" aria-live="polite">
-        <div>
-          <span class="label">Score</span>
-          <strong><span id="humanScore">0</span> - <span id="botScore">0</span></strong>
-        </div>
-        <div>
-          <span class="label">Turn</span>
-          <strong id="status">Loading bot...</strong>
-        </div>
-        <div>
-          <span class="label">Bot</span>
-          <strong id="botSummary">ITER</strong>
-        </div>
-        <div>
-          <span class="label">Last Move</span>
-          <strong id="lastMove">Start</strong>
-        </div>
-      </section>
-
-      <section class="workspace">
-        <div class="board-panel">
-          <svg id="board" role="img" aria-label="Dots and Boxes board"></svg>
+      <section class="game-summary">
+        <div class="status-band" aria-live="polite">
+          <div>
+            <span class="label">Score</span>
+            <strong><span id="humanScore">0</span> - <span id="botScore">0</span></strong>
+          </div>
+          <div>
+            <span class="label">Turn</span>
+            <strong id="status">Loading bot...</strong>
+          </div>
+          <div>
+            <span class="label">Bot</span>
+            <strong id="botSummary">ITER</strong>
+          </div>
+          <div>
+            <span class="label">Last Move</span>
+            <strong id="lastMove">Start</strong>
+          </div>
         </div>
 
         <aside class="side-panel" aria-label="Game controls">
@@ -54,19 +50,17 @@
             <input id="simulationsInput" type="number" min="1" max="5000" step="50" value="300" />
           </label>
 
-          <label class="field">
-            <span>Backend</span>
-            <select id="backendSelect">
-              <option value="js">JavaScript</option>
-              <option value="wasm">WASM fallback</option>
-            </select>
-          </label>
-
           <div class="legend">
             <span><i class="swatch player-0"></i> Player 0</span>
             <span><i class="swatch player-1"></i> Player 1</span>
           </div>
         </aside>
+      </section>
+
+      <section class="workspace">
+        <div class="board-panel">
+          <svg id="board" role="img" aria-label="Dots and Boxes board"></svg>
+        </div>
       </section>
     </main>
 
