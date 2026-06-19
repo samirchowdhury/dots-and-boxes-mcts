@@ -62,10 +62,10 @@ input:focus-visible,
 
 .topbar {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding-bottom: 18px;
+  padding-bottom: 14px;
 }
 
 h1 {
@@ -79,13 +79,8 @@ p {
   margin: 0;
 }
 
-.muted,
 .label {
   color: var(--muted);
-}
-
-.muted {
-  margin-top: 6px;
 }
 
 .button {
@@ -104,28 +99,30 @@ p {
 
 .status-band > div {
   display: grid;
-  gap: 4px;
-  min-height: 74px;
+  gap: 2px;
+  min-height: 52px;
   background: var(--panel);
-  padding: 14px 16px;
+  padding: 8px 12px;
+  align-content: center;
 }
 
 .label {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0;
 }
 
 .status-band strong {
   overflow-wrap: anywhere;
-  font-size: 1.05rem;
+  font-size: 0.98rem;
+  line-height: 1.2;
 }
 
 .game-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 18px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .workspace {
@@ -156,14 +153,15 @@ p {
 
 .side-panel {
   display: grid;
-  gap: 16px;
-  padding: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
   align-content: start;
 }
 
 .field {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   color: var(--muted);
   font-size: 0.85rem;
 }
@@ -171,7 +169,7 @@ p {
 select,
 input[type="number"] {
   width: 100%;
-  min-height: 2.5rem;
+  min-height: 2.25rem;
   border: 1px solid #b7c4cb;
   border-radius: 6px;
   background: #ffffff;
@@ -180,10 +178,12 @@ input[type="number"] {
 }
 
 .legend {
-  display: grid;
-  gap: 10px;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
   border-top: 1px solid var(--line);
-  padding-top: 14px;
+  padding-top: 10px;
   color: var(--muted);
   font-size: 0.93rem;
 }

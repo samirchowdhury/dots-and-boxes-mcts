@@ -6,7 +6,6 @@ import {
 
 const boardEl = document.querySelector("#board");
 const statusEl = document.querySelector("#status");
-const botLabelEl = document.querySelector("#botLabel");
 const botSummaryEl = document.querySelector("#botSummary");
 const humanScoreEl = document.querySelector("#humanScore");
 const botScoreEl = document.querySelector("#botScore");
@@ -40,7 +39,7 @@ worker.addEventListener("message", (event) => {
   const message = event.data;
   if (message.type === "botLoaded") {
     botLoaded = true;
-    updateBotLabel(message.bot);
+    updateBotSummary(message.bot);
     render();
     if (state.currentPlayer === botPlayer) {
       requestBotMove();
@@ -252,11 +251,7 @@ function statusText() {
   return "Bot to move.";
 }
 
-function updateBotLabel(bot) {
-  const sizeMb = bot.weightsByteLength / (1024 * 1024);
-  botLabelEl.textContent = `ITER ${String(bot.iteration).padStart(3, "0")} · ${sizeMb.toFixed(
-    2,
-  )} MB · ${bot.hiddenSize}x${bot.residualBlocks}`;
+function updateBotSummary(bot) {
   botSummaryEl.textContent = `ITER ${String(bot.iteration).padStart(3, "0")}`;
 }
 
