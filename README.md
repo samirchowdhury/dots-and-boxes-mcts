@@ -87,8 +87,23 @@ The runner drives a real Chrome page, plays through dotsandboxes.org's client-si
 engine, blocks the site's log/high-score/analytics requests by default, and
 records ordered moves from the page's game code.
 
-See `DOTSANDBOXES_ORG_EXPERIMENTS.md` for the folder convention and extra
-dotsandboxes.org notes.
+Captured dotsandboxes.org games and reports live under `runs/dotsandboxes-org/`.
+The generated `.jsonl`, `.csv`, `.svg`, `.html`, and video artifacts stay
+ignored by git. Replay any captured JSONL batch with the local viewer:
+
+```bash
+uv run python -m dots_boxes_mcts.viewer
+```
+
+The page's built-in engine uses the site's "Thinking Time" setting. The runner
+defaults to `--site-think-time 0.25`; raise it when you want the page opponent
+to search longer. Use `--allow-site-telemetry` only when you explicitly want to
+allow the page's normal log, high-score, and analytics requests.
+
+dotsandboxes.org stores moves in `gameCode` as edge numbers: horizontal edges
+first, row by row, then vertical edges, column by column. The conversion code
+lives in `dots_boxes_mcts/dotsandboxes_org_browser_eval.py`; parity examples
+live in `tests/test_dotsandboxes_org_browser_eval_recording.py`.
 
 ## Stage 3: EpsilonZero
 
@@ -231,6 +246,34 @@ uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --site-think-time "$THINK" \
   --out runs/dotsandboxes-org/ez-flywheel/iter${ITER}-cpp-vs-dotsandboxes-org-4x4-think${THINK_TAG}.jsonl
 ```
+
+### Run a Checkpoint Tournament
+
+To check whether later self-play checkpoints are improving or forgetting useful
+strategy, run a resumable all-pairs tournament over a deterministic sample of
+checkpoints from `runs/ez-flywheel/`:
+
+```bash
+uv run python -m dots_boxes_mcts.ez_checkpoint_tournament
+```
+
+By default this samples 60 checkpoints, always includes `ITER=542` when present,
+plays each sampled pair twice with swapped player order, and uses the C++ MCTS
+backend with 500 simulations. To change the budget:
+
+```bash
+uv run python -m dots_boxes_mcts.ez_checkpoint_tournament \
+  --sample-size 40 \
+  --simulations 1000 \
+  --mlx-device gpu
+```
+
+Results are written under `runs/checkpoint-tournaments/ez-flywheel-all-pairs/`.
+Use `summary.json` for the forgetting verdict, `standings.csv` for Elo-style
+Bradley-Terry ratings, `pairings.csv` for direct head-to-head results, and
+`games.jsonl` for replayable raw games. The forgetting signal is strongest when
+the latest checkpoint is below both the peak rating and `ITER=542`, and also
+loses or ties the direct head-to-head against `ITER=542`.
 
 ### Collect a dotsandboxes.org Capability Frontier
 

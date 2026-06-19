@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from dots_boxes_mcts.dotsandboxes_org_grid_report import cell_rows, frontier_rows, game_row
+from dots_boxes_mcts.dotsandboxes_org_grid_report import (
+    cell_rows,
+    frontier_rows,
+    game_row,
+    write_small_multiple_movies,
+)
 
 
 def record(
@@ -122,3 +127,34 @@ def test_frontier_rows_finds_minimum_simulations_for_each_role() -> None:
             "any_role_min_win_simulations": 250,
         }
     ]
+
+
+def test_write_small_multiple_movies_emits_one_movie_per_frame_axis(tmp_path) -> None:
+    cells = []
+    for iteration in [541, 542]:
+        for simulations in [250, 500]:
+            for think in [0.25, 1.0]:
+                cells.append(
+                    {
+                        "iteration": iteration,
+                        "simulations": simulations,
+                        "site_think_time": think,
+                        "first_player_win": 1,
+                        "second_player_win": int(simulations == 500),
+                        "combined_win_rate": 1.0 if simulations == 500 else 0.5,
+                        "first_player_margin": 2,
+                        "second_player_margin": 1 if simulations == 500 else -1,
+                    }
+                )
+
+    write_small_multiple_movies(cells, tmp_path)
+
+    by_iteration = tmp_path / "08_movie_by_model_iteration.html"
+    by_simulations = tmp_path / "09_movie_by_mcts_simulations.html"
+    by_think_time = tmp_path / "10_movie_by_opponent_think_time.html"
+    assert by_iteration.exists()
+    assert by_simulations.exists()
+    assert by_think_time.exists()
+    assert '"frameAxis":"iteration"' in by_iteration.read_text(encoding="utf8")
+    assert '"frameAxis":"simulations"' in by_simulations.read_text(encoding="utf8")
+    assert '"frameAxis":"site_think_time"' in by_think_time.read_text(encoding="utf8")
