@@ -663,7 +663,7 @@ def write_turntable_html(
       <span class="swatch" style="color:#e0aa48;background:#e0aa48"></span>split
     </span>
     <span class="key">
-      <span class="swatch" style="color:#56ff97;background:#56ff97"></span>win
+      <span class="swatch" style="color:#56ff97;background:#56ff97"></span>win (both Player 1 and Player 2)
     </span>
   </div>
   <div class="hint">drag to rotate</div>
@@ -692,6 +692,11 @@ def write_turntable_html(
       simulations: uniqueSorted(DATA.cells.map(d => d.simulations)),
       iterations: selectTicks(uniqueSorted(DATA.cells.map(d => d.iteration)), 6),
     }};
+    const annotationTargets = DATA.cells.filter(cell =>
+      cell.iteration === 542 &&
+      cell.simulations >= 5000 &&
+      cell.combined >= 1
+    );
 
     let pointer = null;
     let frame = 0;
@@ -800,6 +805,7 @@ def write_turntable_html(
       drawBackdrop();
       drawAxes();
       drawPoints();
+      drawAnnotations();
       drawVignette();
       requestAnimationFrame(draw);
     }}
@@ -936,6 +942,80 @@ def write_turntable_html(
     }}
     function formatThink(value) {{
       return Number.isInteger(value) ? String(value) : String(value).replace(/0+$/, "").replace(/\\.$/, "");
+    }}
+    function drawAnnotations() {{
+      if (controls.mode !== "combined" || annotationTargets.length === 0) return;
+      const points = annotationTargets
+        .map(cell => project(cellPoint(cell)))
+        .sort((a, b) => a.x - b.x);
+      const label = {{
+        x: innerWidth * (captureMode ? 0.68 : 0.70),
+        y: innerHeight * (captureMode ? 0.20 : 0.23),
+      }};
+      ctx.save();
+      ctx.fillStyle = "rgba(5, 9, 14, 0.58)";
+      ctx.strokeStyle = "rgba(86, 255, 151, 0.70)";
+      ctx.lineWidth = 1;
+      roundRect(label.x - 12, label.y - 30, 234, 58, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "rgba(242, 250, 246, 0.92)";
+      ctx.font = "700 13px Inter, system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("ITER 542 breaks through", label.x, label.y - 8);
+      ctx.font = "12px Inter, system-ui, sans-serif";
+      ctx.fillStyle = "rgba(198, 238, 214, 0.86)";
+      ctx.fillText("both-role wins at high MCTS budget", label.x, label.y + 12);
+      points.forEach((point, index) => {{
+        const start = {{
+          x: label.x + (index === 0 ? 30 : index === 1 ? 118 : 202),
+          y: label.y + 28,
+        }};
+        drawArrow(start.x, start.y, point.x, point.y, "rgba(86, 255, 151, 0.76)");
+        ctx.fillStyle = "rgba(5, 9, 14, 0.64)";
+        ctx.strokeStyle = "rgba(86, 255, 151, 0.86)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }});
+      ctx.restore();
+    }}
+    function drawArrow(x1, y1, x2, y2, color) {{
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const endX = x2 - Math.cos(angle) * 13;
+      const endY = y2 - Math.sin(angle) * 13;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(
+        endX - Math.cos(angle - 0.48) * 9,
+        endY - Math.sin(angle - 0.48) * 9
+      );
+      ctx.lineTo(
+        endX - Math.cos(angle + 0.48) * 9,
+        endY - Math.sin(angle + 0.48) * 9
+      );
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }}
+    function roundRect(x, y, width, height, radius) {{
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.arcTo(x + width, y, x + width, y + height, radius);
+      ctx.arcTo(x + width, y + height, x, y + height, radius);
+      ctx.arcTo(x, y + height, x, y, radius);
+      ctx.arcTo(x, y, x + width, y, radius);
+      ctx.closePath();
     }}
     function drawPoints() {{
       const projected = DATA.cells.map(cell => {{
