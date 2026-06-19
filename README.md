@@ -306,4 +306,4 @@ combined-role heatmaps under `runs/dotsandboxes-org/ez-flywheel-grid/report/`.
 
 ## Resources
 
-[^1]: Tian, Yuandong, et al. "Elf opengo: An analysis and open reimplementation of alphazero." International conference on machine learning. PMLR, 2019.
+[^1]: Tian, Yuandong, et al. "ELF OpenGo: An analysis and open reimplementation of AlphaZero." International Conference on Machine Learning. PMLR, 2019.
