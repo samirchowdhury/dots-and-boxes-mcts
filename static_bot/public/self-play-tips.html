@@ -34,22 +34,16 @@
       </header>
 
       <figure class="media-block">
-        <video
-          autoplay
-          muted
-          loop
-          playsinline
-          controls
-          poster="./assets/media/phase_turntable_poster.jpg"
-        >
-          <source
-            src="./assets/media/phase_turntable_linkedin_annotated_three_wins.webm"
-            type="video/webm"
-          />
-        </video>
+        <iframe
+          class="phase-demo"
+          src="./experiments/phase-turntable.html?capture"
+          title="Interactive win-rate phase diagram"
+          loading="lazy"
+        ></iframe>
         <figcaption>
-          Placeholder caption: each point is an evaluation run against dotsandboxes.org. Green marks
-          models that found wins from both seats under this evaluation setup.
+          Placeholder caption: drag to rotate the phase diagram. Each point is an evaluation run
+          against dotsandboxes.org; green marks models that found wins from both seats under this
+          evaluation setup.
         </figcaption>
       </figure>
 
