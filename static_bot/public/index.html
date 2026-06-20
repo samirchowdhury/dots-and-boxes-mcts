@@ -15,37 +15,34 @@
         <button id="resetButton" class="button" type="button">New game</button>
       </header>
 
-      <section class="game-summary">
-        <div class="status-band" aria-live="polite">
-          <div>
-            <span class="label">Score</span>
-            <strong><span id="humanScore">0</span> - <span id="botScore">0</span></strong>
-          </div>
-          <div>
-            <span class="label">Turn</span>
-            <strong id="status">Loading bot...</strong>
-          </div>
+      <section class="game-panel" aria-label="Game status and controls">
+        <div class="panel-item" aria-live="polite">
+          <span class="label">Score</span>
+          <strong><span id="humanScore">0</span> - <span id="botScore">0</span></strong>
         </div>
 
-        <aside class="side-panel" aria-label="Game controls">
-          <label class="field">
-            <span>You play</span>
-            <select id="playerSelect">
-              <option value="0">First</option>
-              <option value="1">Second</option>
-            </select>
-          </label>
+        <div class="panel-item" aria-live="polite">
+          <span class="label">Turn</span>
+          <strong id="status">Loading bot...</strong>
+        </div>
 
-          <label class="field">
-            <span>Simulations</span>
-            <input id="simulationsInput" type="number" min="1" max="5000" step="50" value="300" />
-          </label>
+        <label class="field">
+          <span>You play</span>
+          <select id="playerSelect">
+            <option value="0">First</option>
+            <option value="1">Second</option>
+          </select>
+        </label>
 
-          <div class="legend">
-            <span><i class="swatch player-0"></i> Player 0</span>
-            <span><i class="swatch player-1"></i> Player 1</span>
-          </div>
-        </aside>
+        <label class="field">
+          <span>Simulations</span>
+          <input id="simulationsInput" type="number" min="1" max="5000" step="50" value="300" />
+        </label>
+
+        <div class="legend">
+          <span><i class="swatch player-0"></i> Player 0</span>
+          <span><i class="swatch player-1"></i> Player 1</span>
+        </div>
       </section>
 
       <section class="workspace">
@@ -55,6 +52,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/ui/app.js?v=no-bot-details"></script>
+    <script type="module" src="./src/ui/app.js?v=dark-top-panel"></script>
   </body>
 </html>
