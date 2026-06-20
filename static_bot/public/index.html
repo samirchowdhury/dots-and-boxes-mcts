@@ -25,14 +25,6 @@
             <span class="label">Turn</span>
             <strong id="status">Loading bot...</strong>
           </div>
-          <div>
-            <span class="label">Bot</span>
-            <strong id="botSummary">ITER</strong>
-          </div>
-          <div>
-            <span class="label">Last Move</span>
-            <strong id="lastMove">Start</strong>
-          </div>
         </div>
 
         <aside class="side-panel" aria-label="Game controls">
@@ -52,6 +44,11 @@
           <div class="legend">
             <span><i class="swatch player-0"></i> Player 0</span>
             <span><i class="swatch player-1"></i> Player 1</span>
+          </div>
+
+          <div class="game-details" aria-live="polite">
+            <span id="botSummary">ITER</span>
+            <span>Last: <strong id="lastMove">Start</strong></span>
           </div>
         </aside>
       </section>

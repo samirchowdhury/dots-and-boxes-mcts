@@ -89,7 +89,7 @@ p {
 
 .status-band {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -120,8 +120,8 @@ p {
 
 .game-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 14px;
   align-items: start;
 }
 
@@ -153,13 +153,14 @@ p {
 
 .side-panel {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   padding: 12px;
   align-content: start;
 }
 
 .field {
+  grid-column: span 2;
   display: grid;
   gap: 5px;
   color: var(--muted);
@@ -178,20 +179,35 @@ input[type="number"] {
 }
 
 .legend {
-  grid-column: 1 / -1;
+  grid-column: span 2;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
   color: var(--muted);
   font-size: 0.93rem;
+  align-items: center;
 }
 
 .legend span {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.game-details {
+  grid-column: span 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: end;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.game-details strong {
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .swatch {
@@ -251,5 +267,19 @@ input[type="number"] {
 
   .status-band {
     grid-template-columns: 1fr;
+  }
+
+  .side-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field,
+  .legend,
+  .game-details {
+    grid-column: 1 / -1;
+  }
+
+  .game-details {
+    justify-content: start;
   }
 }
