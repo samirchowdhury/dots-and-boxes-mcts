@@ -15,7 +15,9 @@ const playerSelect = document.querySelector("#playerSelect");
 const simulationsInput = document.querySelector("#simulationsInput");
 
 const botUrl = new URL("./assets/bots/latest.json", window.location.href).toString();
-const worker = new Worker(new URL("../worker/bot-worker.js", import.meta.url), { type: "module" });
+const worker = new Worker(new URL("../worker/bot-worker.js?v=pages-wasm-path", import.meta.url), {
+  type: "module",
+});
 
 let state = newGame(4, 4);
 let humanPlayer = 0;

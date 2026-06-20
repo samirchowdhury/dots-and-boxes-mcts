@@ -1,6 +1,6 @@
 import { loadBot } from "../nn/loader.js";
 import { searchNetworkGuided } from "../mcts/search.js";
-import { createWasmSearchBackend } from "../mcts/wasm-search.js";
+import { createWasmSearchBackend } from "../mcts/wasm-search.js?v=pages-wasm-path";
 
 let model = null;
 let modelUrl = null;
