@@ -6,10 +6,8 @@ import {
 
 const boardEl = document.querySelector("#board");
 const statusEl = document.querySelector("#status");
-const botSummaryEl = document.querySelector("#botSummary");
 const humanScoreEl = document.querySelector("#humanScore");
 const botScoreEl = document.querySelector("#botScore");
-const lastMoveEl = document.querySelector("#lastMove");
 const resetButton = document.querySelector("#resetButton");
 const playerSelect = document.querySelector("#playerSelect");
 const simulationsInput = document.querySelector("#simulationsInput");
@@ -24,7 +22,6 @@ let humanPlayer = 0;
 let botPlayer = 1;
 let thinking = false;
 let botLoaded = false;
-let lastMoveEdge = null;
 let statusOverride = "";
 
 const colors = {
@@ -42,7 +39,6 @@ worker.addEventListener("message", (event) => {
   const message = event.data;
   if (message.type === "botLoaded") {
     botLoaded = true;
-    updateBotSummary(message.bot);
     render();
     if (state.currentPlayer === botPlayer) {
       requestBotMove();
@@ -60,11 +56,6 @@ worker.addEventListener("message", (event) => {
     thinking = false;
     statusOverride = "";
     state = applyMove(state, message.move);
-    lastMoveEdge = message.move;
-    const top = message.search.stats[0];
-    lastMoveEl.title = `Bot played in ${message.elapsedMs.toFixed(0)} ms. Top line: ${
-      top.move
-    }, ${top.visits} visits.`;
     render();
     if (!state.terminal && state.currentPlayer === botPlayer) {
       window.setTimeout(requestBotMove, 80);
@@ -93,8 +84,6 @@ function resetGame() {
   state = newGame(4, 4);
   thinking = false;
   statusOverride = "";
-  lastMoveEdge = null;
-  lastMoveEl.title = "";
   render();
   if (botLoaded && state.currentPlayer === botPlayer) {
     requestBotMove();
@@ -122,7 +111,6 @@ function render() {
   renderBoard();
   humanScoreEl.textContent = String(state.scores[humanPlayer]);
   botScoreEl.textContent = String(state.scores[botPlayer]);
-  lastMoveEl.textContent = lastMoveText();
   if (statusOverride) {
     statusEl.textContent = statusOverride;
   } else if (!thinking) {
@@ -236,8 +224,6 @@ function playHumanMove(edge) {
     return;
   }
   state = applyMove(state, edge);
-  lastMoveEdge = edge;
-  lastMoveEl.title = "";
   render();
   if (!state.terminal && state.currentPlayer === botPlayer) {
     requestBotMove();
@@ -258,10 +244,6 @@ function statusText() {
     return "Your move.";
   }
   return "Bot to move.";
-}
-
-function updateBotSummary(bot) {
-  botSummaryEl.textContent = `ITER ${String(bot.iteration).padStart(3, "0")}`;
 }
 
 function clampedSimulations() {
@@ -346,15 +328,6 @@ function addText(x, y, value) {
   text.setAttribute("y", y);
   text.textContent = value;
   boardEl.append(text);
-}
-
-function lastMoveText() {
-  const latest = state.history[state.history.length - 1];
-  if (!latest) {
-    return "Start";
-  }
-  const scoredText = latest.scored ? ` scored ${latest.boxes.length}` : "";
-  return `P${latest.player}: ${latest.edgeId}${scoredText}`;
 }
 
 function createSvgElement(tagName) {
