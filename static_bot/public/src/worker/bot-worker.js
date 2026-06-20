@@ -27,8 +27,13 @@ async function handleMessage(message) {
     const simulations = Math.max(1, Number(message.simulations || 100));
     let backendUsed = "js";
     if (message.backend === "wasm") {
-      wasmBackend = wasmBackend || (await createWasmSearchBackend());
-      backendUsed = wasmBackend.available ? "wasm" : "js";
+      try {
+        wasmBackend = wasmBackend || (await createWasmSearchBackend());
+        backendUsed = wasmBackend.available ? "wasm" : "js";
+      } catch (error) {
+        wasmBackend = null;
+        backendUsed = "js";
+      }
     }
 
     self.postMessage({ type: "thinking", simulations, backendUsed });

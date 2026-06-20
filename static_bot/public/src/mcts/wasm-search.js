@@ -1,5 +1,5 @@
 export async function createWasmSearchBackend() {
-  const moduleUrl = new URL("../../../wasm/search-kernel.wasm", import.meta.url);
+  const moduleUrl = new URL("../../wasm/search-kernel.wasm", import.meta.url);
   const instance = await WebAssembly.instantiateStreaming(fetch(moduleUrl));
   const exports = instance.instance.exports;
   const memory = exports.memory;

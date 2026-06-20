@@ -23,6 +23,7 @@ let botPlayer = 1;
 let thinking = false;
 let botLoaded = false;
 let lastMoveEdge = null;
+let statusOverride = "";
 
 const colors = {
   0: {
@@ -48,12 +49,14 @@ worker.addEventListener("message", (event) => {
   }
   if (message.type === "thinking") {
     thinking = true;
+    statusOverride = "";
     statusEl.textContent = `Bot thinking with ${message.simulations} simulations...`;
     render();
     return;
   }
   if (message.type === "move") {
     thinking = false;
+    statusOverride = "";
     state = applyMove(state, message.move);
     lastMoveEdge = message.move;
     const top = message.search.stats[0];
@@ -68,7 +71,7 @@ worker.addEventListener("message", (event) => {
   }
   if (message.type === "error") {
     thinking = false;
-    statusEl.textContent = message.message;
+    statusOverride = message.message;
     render();
   }
 });
@@ -87,6 +90,7 @@ function resetGame() {
   botPlayer = humanPlayer === 0 ? 1 : 0;
   state = newGame(4, 4);
   thinking = false;
+  statusOverride = "";
   lastMoveEdge = null;
   lastMoveEl.title = "";
   render();
@@ -100,6 +104,7 @@ function requestBotMove() {
     return;
   }
   thinking = true;
+  statusOverride = "";
   render();
   worker.postMessage({
     type: "chooseMove",
@@ -116,7 +121,9 @@ function render() {
   humanScoreEl.textContent = String(state.scores[humanPlayer]);
   botScoreEl.textContent = String(state.scores[botPlayer]);
   lastMoveEl.textContent = lastMoveText();
-  if (!thinking) {
+  if (statusOverride) {
+    statusEl.textContent = statusOverride;
+  } else if (!thinking) {
     statusEl.textContent = statusText();
   }
 }
