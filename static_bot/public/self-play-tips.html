@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>5 Tips for Training a Bot with Self-Play</title>
+    <meta
+      name="description"
+      content="A short writeup about lessons from training a Dots-and-Boxes bot with self-play."
+    />
+    <meta property="og:title" content="5 Tips for Training a Bot with Self-Play" />
+    <meta
+      property="og:description"
+      content="Notes from training a Dots-and-Boxes bot against itself and an old handcrafted opponent."
+    />
+    <meta property="og:type" content="article" />
+    <meta property="og:image" content="./assets/media/phase_turntable_poster.jpg" />
+    <link rel="stylesheet" href="./article.css" />
+  </head>
+  <body>
+    <main class="article-shell">
+      <nav class="site-nav" aria-label="Site navigation">
+        <a href="./">Play the bot</a>
+        <a href="https://github.com/samirchowdhury/dots-and-boxes-mcts">GitHub</a>
+      </nav>
+
+      <header class="article-header">
+        <p class="eyebrow">Dots-and-Boxes MCTS</p>
+        <h1>5 Tips for Training a Bot with Self-Play</h1>
+        <p class="dek">
+          Placeholder intro: I thought this would be a small AlphaZero-style experiment. Then an
+          old JavaScript Dots-and-Boxes bot kept finding ways to make the training loop look silly.
+        </p>
+      </header>
+
+      <figure class="media-block">
+        <video
+          autoplay
+          muted
+          loop
+          playsinline
+          controls
+          poster="./assets/media/phase_turntable_poster.jpg"
+        >
+          <source
+            src="./assets/media/phase_turntable_linkedin_annotated_three_wins.webm"
+            type="video/webm"
+          />
+        </video>
+        <figcaption>
+          Placeholder caption: each point is an evaluation run against dotsandboxes.org. Green marks
+          models that found wins from both seats under this evaluation setup.
+        </figcaption>
+      </figure>
+
+      <article class="article-body">
+        <section>
+          <h2>1. Start with boring baselines</h2>
+          <p>
+            Placeholder text: before self-play gets interesting, make random play, legal move
+            generation, scoring, and game termination painfully correct. Most mysterious training
+            failures are less mysterious after the rules are checked against fixtures and simple
+            baselines.
+          </p>
+        </section>
+
+        <section>
+          <h2>2. Keep an external opponent around</h2>
+          <p>
+            Placeholder text: self-play can produce agents that are excellent inside their own
+            training distribution and strangely brittle outside it. A fixed external bot is useful
+            because it does not politely share your agent's blind spots.
+          </p>
+        </section>
+
+        <section>
+          <h2>3. Treat every breakthrough as provisional</h2>
+          <p>
+            Placeholder text: a checkpoint that looks strong today can be surpassed, exploited, or
+            forgotten tomorrow. Save checkpoints, run repeatable evaluations, and expect progress to
+            look bumpier than a single headline number suggests.
+          </p>
+        </section>
+
+        <section>
+          <h2>4. More search is not always better</h2>
+          <p>
+            Placeholder text: MCTS gives the bot more time to think, but a miscalibrated policy or
+            value estimate can still steer that thinking into trouble. One of the stranger lessons
+            here was that the bot sometimes performed better when it resisted the urge to overthink.
+          </p>
+        </section>
+
+        <section>
+          <h2>5. Self-play finds exploits before wisdom</h2>
+          <p>
+            Placeholder text: self-play is powerful because it creates its own curriculum, but that
+            curriculum is only as good as the pressure applied to it. The agent learns the game you
+            actually evaluate, not the tidy story you hoped it would learn.
+          </p>
+        </section>
+      </article>
+
+      <footer class="article-footer">
+        <a href="./">Play against the bot</a>
+        <a href="https://github.com/samirchowdhury/dots-and-boxes-mcts">Read the code</a>
+      </footer>
+    </main>
+
+    <script
+      data-goatcounter="https://retro-puzzles.goatcounter.com/count"
+      async
+      src="//gc.zgo.at/count.js"
+    ></script>
+  </body>
+</html>
