@@ -3,35 +3,126 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>5 Tips for Training a Bot with Self-Play</title>
+    <title>5 Tips For Training Your First AlphaZero Bot</title>
     <meta
       name="description"
       content="A short writeup about lessons from training a Dots-and-Boxes bot with self-play."
     />
-    <meta property="og:title" content="5 Tips for Training a Bot with Self-Play" />
+    <meta
+      property="og:title"
+      content="5 Tips For Training Your First AlphaZero Bot"
+    />
     <meta
       property="og:description"
       content="Notes from training a Dots-and-Boxes bot against itself and an old handcrafted opponent."
     />
     <meta property="og:type" content="article" />
-    <meta property="og:image" content="./assets/media/phase_turntable_poster.jpg" />
+    <meta
+      property="og:image"
+      content="./assets/media/phase_turntable_poster.jpg"
+    />
     <link rel="stylesheet" href="./article.css" />
   </head>
   <body>
     <main class="article-shell">
       <nav class="site-nav" aria-label="Site navigation">
-        <a href="./">Play the bot</a>
-        <a href="https://github.com/samirchowdhury/dots-and-boxes-mcts">GitHub</a>
+        <a href="./">Play against the bot</a>
+        <a href="https://github.com/samirchowdhury/dots-and-boxes-mcts"
+          >Read the code</a
+        >
       </nav>
 
       <header class="article-header">
-        <p class="eyebrow">Dots-and-Boxes MCTS</p>
-        <h1>5 Tips for Training a Bot with Self-Play</h1>
-        <p class="dek">
-          Placeholder intro: I thought this would be a small AlphaZero-style experiment. Then an
-          old JavaScript Dots-and-Boxes bot kept finding ways to make the training loop look silly.
-        </p>
+        <h2>5 Tips For Training Your First AlphaZero Bot</h2>
       </header>
+
+      <article class="article-body">
+        <p>
+          These were the gaps I needed to fill while training up an AlphaZero
+          (AZ)-style bot to play a game—specifically, Dots-and-Boxes—using Codex
+          and GPT-5.5. My experience is a snapshot from mid-2026; future models
+          might cover these gaps from the start.
+        </p>
+        <section>
+          <h3>1. Check if your game is suitable for Monte Carlo Tree Search</h3>
+          <p>
+            Monte Carlo Tree Search (MCTS) is a core ingredient of AlphaZero and
+            related algorithms. This is a good fit for perfect information games
+            where all players see the entire history and state of the game.
+            Dots-and-Boxes is one example. Card games where a player cannot see
+            other players' hands are non-examples.
+          </p>
+        </section>
+
+        <section>
+          <h3>2. Port your MCTS to a compiled language as soon as you can</h3>
+          <p>
+            Learning from self-play is extremely iteration-hungry. I knew
+            this—but didn't really <i>know</i> it—until I read the breakdown in
+            the ELF OpenGo paper's appendix about the <i>thousands</i> of
+            TPUs/GPUs (and who knows how much CPU) used for generating self-play
+            games. One of the best things that independent devs can do for their
+            laptop bots is to move MCTS search out of Python and into a compiled
+            language as quickly as we can.
+          </p>
+        </section>
+
+        <section>
+          <h3>
+            3. Read the algorithm very carefully, and use your judgment to fill
+            in the gaps
+          </h3>
+          <p>
+            Authors may leave out implementation details despite their best
+            efforts at providing completeness. Sometimes this is necessary to
+            accommodate paper length limits (Science and Nature have extremely
+            tight limits). The Appendix and Supplementary Materials are usually
+            your friends. The AZ paper's Supplementary Materials contain a
+            <code>pseudocode.py</code> file that I found very useful. The ELF
+            OpenGo paper provided numerous useful details for both AZ and
+            AlphaGo Zero (AGZ) in addition to its own implementation details.
+            While learning, I found it very useful to leverage these external
+            resources to write out the algorithm carefully (but not before I got
+            burned by a poor understanding of the replay buffer that led to a
+            painful exploit loop).
+          </p>
+        </section>
+
+        <section>
+          <h3>4. Keep external evals</h3>
+          <p>
+            Dots-and-Boxes is well-studied mathematically and has many
+            implementations available online. I never trained against any of
+            them, but I did use one of these implementations to test my bot
+            periodically. Beating an external bot is an excellent motivator in
+            addition to being a good sanity check! Watch out for the Terms of
+            Service though; the first external bot I played against had a clause
+            in its ToS against automated play, and I pulled my code as soon as I
+            realized this. The bot at dotsandboxes.org turned out to be much
+            better for my use case, as the game engine could be run client-side
+            without spamming anyone's personal server. If your game has external
+            browser-based implementations, note that Codex is excellent at
+            wiring up your bot to play in a browser.
+          </p>
+        </section>
+
+        <section>
+          <h3>5. Know that cycles in strategy space might be unavoidable</h3>
+          <p>
+            Playing against an external bot with a deterministic strategy helped
+            me realize that self-play can create a situation where model A loses
+            to its next iteration B, and B loses to its next iteration C, but A
+            is able to exploit C. I later realized that this was a well-known
+            phenomenon; the AlphaStar paper described this issue and pointed to
+            mitigation techniques (although I have yet to try them).
+          </p>
+        </section>
+
+        <section>
+          <h3>6. Have fun</h3>
+          <p>We're only playing games, after all.</p>
+        </section>
+      </article>
 
       <figure class="media-block">
         <iframe
@@ -41,64 +132,11 @@
           loading="lazy"
         ></iframe>
         <figcaption>
-          Placeholder caption: drag to rotate the phase diagram. Each point is an evaluation run
-          against dotsandboxes.org; green marks models that found wins from both seats under this
-          evaluation setup.
+          Results from evaluation against dotsandboxes.org. Each dot is colored
+          according to results from two games: one as Player 1 and another as
+          Player 2.
         </figcaption>
       </figure>
-
-      <article class="article-body">
-        <section>
-          <h2>1. Start with boring baselines</h2>
-          <p>
-            Placeholder text: before self-play gets interesting, make random play, legal move
-            generation, scoring, and game termination painfully correct. Most mysterious training
-            failures are less mysterious after the rules are checked against fixtures and simple
-            baselines.
-          </p>
-        </section>
-
-        <section>
-          <h2>2. Keep an external opponent around</h2>
-          <p>
-            Placeholder text: self-play can produce agents that are excellent inside their own
-            training distribution and strangely brittle outside it. A fixed external bot is useful
-            because it does not politely share your agent's blind spots.
-          </p>
-        </section>
-
-        <section>
-          <h2>3. Treat every breakthrough as provisional</h2>
-          <p>
-            Placeholder text: a checkpoint that looks strong today can be surpassed, exploited, or
-            forgotten tomorrow. Save checkpoints, run repeatable evaluations, and expect progress to
-            look bumpier than a single headline number suggests.
-          </p>
-        </section>
-
-        <section>
-          <h2>4. More search is not always better</h2>
-          <p>
-            Placeholder text: MCTS gives the bot more time to think, but a miscalibrated policy or
-            value estimate can still steer that thinking into trouble. One of the stranger lessons
-            here was that the bot sometimes performed better when it resisted the urge to overthink.
-          </p>
-        </section>
-
-        <section>
-          <h2>5. Self-play finds exploits before wisdom</h2>
-          <p>
-            Placeholder text: self-play is powerful because it creates its own curriculum, but that
-            curriculum is only as good as the pressure applied to it. The agent learns the game you
-            actually evaluate, not the tidy story you hoped it would learn.
-          </p>
-        </section>
-      </article>
-
-      <footer class="article-footer">
-        <a href="./">Play against the bot</a>
-        <a href="https://github.com/samirchowdhury/dots-and-boxes-mcts">Read the code</a>
-      </footer>
     </main>
 
     <script
