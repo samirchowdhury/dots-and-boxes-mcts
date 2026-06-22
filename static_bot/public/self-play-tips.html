@@ -60,11 +60,11 @@
             Learning from self-play is extremely iteration-hungry. I knew
             this—but didn't really <i>know</i> it—until I read the breakdown in
             the ELF OpenGo paper's appendix about the <i>thousands</i> of
-            TPUs/GPUs (and who knows how much CPU) used for generating
-            self-play games.<sup><a href="#ref-elf">3</a></sup> One of the best
-            things that independent devs can do for their laptop bots is to move
-            MCTS search out of Python and into a compiled language as quickly as
-            we can.
+            TPUs/GPUs (and who knows how much CPU) used for generating self-play
+            games<sup><a href="#ref-elf">3</a></sup
+            >. One of the best things that independent devs can do for their
+            laptop bots is to move MCTS search out of Python and into a compiled
+            language as quickly as they can.
           </p>
         </section>
 
@@ -79,15 +79,13 @@
             accommodate paper length limits (Science and Nature have extremely
             tight limits). The Appendix and Supplementary Materials are usually
             your friends. The AZ paper's Supplementary Materials contain a
-            <code>pseudocode.py</code> file that I found very useful.<sup
+            <code>pseudocode.py</code> file that I found very useful<sup
               ><a href="#ref-az">1</a></sup
-            >
-            The ELF OpenGo paper provided numerous useful details for both AZ
+            >. The ELF OpenGo paper provided numerous useful details for both AZ
             and AlphaGo Zero (AGZ)<sup><a href="#ref-agz">2</a></sup> in
-            addition to its own implementation details.<sup
+            addition to its own implementation details<sup
               ><a href="#ref-elf">3</a></sup
-            >
-            While learning, I found it very useful to leverage these external
+            >. While learning, I found it very useful to leverage these external
             resources to write out the algorithm carefully (but not before I got
             burned by a poor understanding of the replay buffer that led to a
             painful exploit loop).
@@ -156,8 +154,8 @@
             <li id="ref-az">
               Silver, David, et al.
               <a href="https://www.science.org/doi/10.1126/science.aar6404"
-                >"A general reinforcement learning algorithm that masters
-                chess, shogi, and Go through self-play."</a
+                >"A general reinforcement learning algorithm that masters chess,
+                shogi, and Go through self-play."</a
               >
               <i>Science</i> 362.6419 (2018): 1140-1144.
             </li>
