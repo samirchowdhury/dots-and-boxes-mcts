@@ -82,8 +82,30 @@ p {
   margin: 0;
 }
 
+a {
+  color: inherit;
+}
+
 .label {
   color: var(--muted);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.text-link {
+  color: var(--muted);
+  font-size: 0.95rem;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 0.22em;
+}
+
+.text-link:hover {
+  color: var(--accent-hover);
+  text-decoration-color: var(--accent-hover);
 }
 
 .button {
@@ -240,6 +262,10 @@ input[type="number"]:hover {
     align-items: stretch;
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .topbar-actions {
+    justify-content: space-between;
   }
 
   .game-panel {

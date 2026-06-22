@@ -39,8 +39,8 @@
       <article class="article-body">
         <p>
           These were the gaps I needed to fill while building my first AlphaZero
-          (AZ)-style bot to play a game—specifically, Dots-and-Boxes—using Codex
-          and GPT-5.5.
+          (AZ)-style bot<sup><a href="#ref-az">1</a></sup> to play a
+          game—specifically, Dots-and-Boxes—using Codex and GPT-5.5.
         </p>
         <section>
           <h2>1. Check if your game is suitable for Monte Carlo Tree Search</h2>
@@ -60,10 +60,11 @@
             Learning from self-play is extremely iteration-hungry. I knew
             this—but didn't really <i>know</i> it—until I read the breakdown in
             the ELF OpenGo paper's appendix about the <i>thousands</i> of
-            TPUs/GPUs (and who knows how much CPU) used for generating self-play
-            games. One of the best things that independent devs can do for their
-            laptop bots is to move MCTS search out of Python and into a compiled
-            language as quickly as we can.
+            TPUs/GPUs (and who knows how much CPU) used for generating
+            self-play games.<sup><a href="#ref-elf">3</a></sup> One of the best
+            things that independent devs can do for their laptop bots is to move
+            MCTS search out of Python and into a compiled language as quickly as
+            we can.
           </p>
         </section>
 
@@ -78,9 +79,14 @@
             accommodate paper length limits (Science and Nature have extremely
             tight limits). The Appendix and Supplementary Materials are usually
             your friends. The AZ paper's Supplementary Materials contain a
-            <code>pseudocode.py</code> file that I found very useful. The ELF
-            OpenGo paper provided numerous useful details for both AZ and
-            AlphaGo Zero (AGZ) in addition to its own implementation details.
+            <code>pseudocode.py</code> file that I found very useful.<sup
+              ><a href="#ref-az">1</a></sup
+            >
+            The ELF OpenGo paper provided numerous useful details for both AZ
+            and AlphaGo Zero (AGZ)<sup><a href="#ref-agz">2</a></sup> in
+            addition to its own implementation details.<sup
+              ><a href="#ref-elf">3</a></sup
+            >
             While learning, I found it very useful to leverage these external
             resources to write out the algorithm carefully (but not before I got
             burned by a poor understanding of the replay buffer that led to a
@@ -98,11 +104,12 @@
             addition to being a good sanity check! Watch out for the Terms of
             Service though; the first external bot I played against had a clause
             in its ToS against automated play, and I pulled my code as soon as I
-            realized this. The bot at dotsandboxes.org turned out to be much
-            better for my use case, as the game engine could be run client-side
-            without spamming anyone's personal server. If your game has external
-            browser-based implementations, note that Codex is excellent at
-            wiring up your bot to play in a browser.
+            realized this. The bot at
+            <a href="https://dotsandboxes.org/">dotsandboxes.org</a> turned out
+            to be much better for my use case, as the game engine could be run
+            client-side without spamming anyone's personal server. If your game
+            has external browser-based implementations, note that Codex is
+            excellent at wiring up your bot to play in a browser.
           </p>
         </section>
 
@@ -115,7 +122,9 @@
             create a situation where A loses to B, B loses to C, but A is able
             to exploit C. I later realized that this was a well-known
             phenomenon; the AlphaStar paper described this issue and pointed to
-            mitigation techniques (although I have yet to try them).
+            mitigation techniques (although I have yet to try them).<sup
+              ><a href="#ref-alphastar">4</a></sup
+            >
           </p>
         </section>
 
@@ -139,6 +148,43 @@
               another as Player 2.
             </figcaption> -->
           </figure>
+        </section>
+
+        <section class="references" aria-labelledby="references-heading">
+          <h2 id="references-heading">References</h2>
+          <ol>
+            <li id="ref-az">
+              Silver, David, et al.
+              <a href="https://www.science.org/doi/10.1126/science.aar6404"
+                >"A general reinforcement learning algorithm that masters
+                chess, shogi, and Go through self-play."</a
+              >
+              <i>Science</i> 362.6419 (2018): 1140-1144.
+            </li>
+            <li id="ref-agz">
+              Silver, David, et al.
+              <a href="https://www.nature.com/articles/nature24270"
+                >"Mastering the game of Go without human knowledge."</a
+              >
+              <i>Nature</i> 550.7676 (2017): 354-359.
+            </li>
+            <li id="ref-elf">
+              Tian, Yuandong, et al.
+              <a href="https://arxiv.org/abs/1902.04522"
+                >"ELF OpenGo: An analysis and open reimplementation of
+                AlphaZero."</a
+              >
+              <i>International Conference on Machine Learning</i>. PMLR, 2019.
+            </li>
+            <li id="ref-alphastar">
+              Vinyals, Oriol, et al.
+              <a href="https://www.nature.com/articles/s41586-019-1724-z"
+                >"Grandmaster level in StarCraft II using multi-agent
+                reinforcement learning."</a
+              >
+              <i>Nature</i> 575.7782 (2019): 350-354.
+            </li>
+          </ol>
         </section>
       </article>
     </main>

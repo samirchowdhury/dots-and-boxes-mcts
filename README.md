@@ -8,7 +8,7 @@ This README is meant to be a pedagogical guide. Follow this pattern:
 2. Look at the evidence: games, stats, visual replays, and failure cases.
 3. Read only the one or two files that explain the mechanism you are studying.
 
-**Notation:** We will use AZ and AGZ as shorthand for AlphaZero and AlphaGo Zero, respectively. Note that these are different works with slightly different implementations. The ELF OpenGo[^1] paper explains these differences well.
+**Notation:** We will use AZ and AGZ as shorthand for AlphaZero[^1] and AlphaGo Zero[^2], respectively. Note that these are different works with slightly different implementations. The ELF OpenGo[^3] paper explains these differences well.
 
 ## Environment
 
@@ -247,40 +247,36 @@ uv run python -m dots_boxes_mcts.dotsandboxes_org_browser_eval \
   --out runs/dotsandboxes-org/ez-flywheel/iter${ITER}-cpp-vs-dotsandboxes-org-4x4-think${THINK_TAG}.jsonl
 ```
 
+## Stage 4: Sanity Checks
+
+I needed to get up to iteration 542 before getting a bot that could beat dotsandboxes.org as both Player 1 and Player 2.
+Earlier iterations might have had that capability; 542 was just the iteration where I manually tried long-enough MCTS (5000 simulations).
+
+Testing against dotsandboxes.org is an excellent sanity check.
+Replaying games using the viewer is another.
+The following methods can provide further checks of how model training is progressing.
+Regressions need not be surprising!
+
 ### Run a Checkpoint Tournament
 
 To check whether later self-play checkpoints are improving or forgetting useful
-strategy, run a resumable all-pairs tournament over a deterministic sample of
-checkpoints from `runs/ez-flywheel/`:
+strategy, run a tournament over a sample of
+checkpoints:
 
 ```bash
 uv run python -m dots_boxes_mcts.ez_checkpoint_tournament
 ```
 
-By default this samples 60 checkpoints, always includes `ITER=542` when present,
-plays each sampled pair twice with swapped player order, and uses the C++ MCTS
-backend with 500 simulations. To change the budget:
-
-```bash
-uv run python -m dots_boxes_mcts.ez_checkpoint_tournament \
-  --sample-size 40 \
-  --simulations 1000 \
-  --mlx-device gpu
-```
+This tournament plays each sampled pair twice with swapped player order, and uses the C++ MCTS
+backend with 500 simulations.
 
 Results are written under `runs/checkpoint-tournaments/ez-flywheel-all-pairs/`.
-Use `summary.json` for the forgetting verdict, `standings.csv` for Elo-style
-Bradley-Terry ratings, `pairings.csv` for direct head-to-head results, and
-`games.jsonl` for replayable raw games. The forgetting signal is strongest when
-the latest checkpoint is below both the peak rating and `ITER=542`, and also
-loses or ties the direct head-to-head against `ITER=542`.
+Use `standings.csv` for Elo ratings, `pairings.csv` for direct head-to-head results, and
+`games.jsonl` for replayable raw games.
 
-### Collect a dotsandboxes.org Capability Frontier
+### Collect an Evaluation Grid Against dotsandboxes.org
 
-Run a resumable broad-grid sweep over checkpoint iteration, EpsilonZero
-simulations, and dotsandboxes.org thinking time. This collects the raw games for
-frontier/heatmap analysis; rerun the same command after an interruption and it
-will skip completed games in `runs/dotsandboxes-org/ez-flywheel-grid/games.jsonl`.
+The following script plays games against dotsandboxes.org while sweeping across model iterations, MCTS simulations, and dotsandboxes.org thinking time.
 
 ```bash
 uv run python -m dots_boxes_mcts.dotsandboxes_org_grid_eval
@@ -295,15 +291,14 @@ uv run python -m dots_boxes_mcts.dotsandboxes_org_grid_eval \
   --site-think-times 0.05,0.1,0.25,0.5,1.0,2.0,4.0
 ```
 
-After the grid completes, flatten it into CSVs and an SVG heatmap:
+This script provides some sample visualizations of the data:
 
 ```bash
 uv run python -m dots_boxes_mcts.dotsandboxes_org_grid_report
 ```
 
-The report writes per-game rows, paired role cells, frontier thresholds, and
-combined-role heatmaps under `runs/dotsandboxes-org/ez-flywheel-grid/report/`.
-
 ## Resources
 
-[^1]: Tian, Yuandong, et al. "ELF OpenGo: An analysis and open reimplementation of AlphaZero." International Conference on Machine Learning. PMLR, 2019.
+[^1]: Silver, David, et al. "A general reinforcement learning algorithm that masters chess, shogi, and Go through self-play." Science 362.6419 (2018): 1140-1144.
+[^2]: Silver, David, et al. "Mastering the game of Go without human knowledge." Nature 550.7676 (2017): 354-359.
+[^3]: Tian, Yuandong, et al. "ELF OpenGo: An analysis and open reimplementation of AlphaZero." International Conference on Machine Learning. PMLR, 2019.

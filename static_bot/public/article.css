@@ -39,6 +39,11 @@ figure {
   margin: 0;
 }
 
+sup {
+  font-size: 0.72em;
+  line-height: 0;
+}
+
 .article-shell {
   width: min(920px, calc(100vw - 32px));
   margin: 0 auto;
@@ -127,6 +132,19 @@ h2 {
   color: #d4d4d8;
   font-size: 1.04rem;
   line-height: 1.72;
+}
+
+.references ol {
+  max-width: 720px;
+  margin: 14px 0 0;
+  padding-left: 1.4rem;
+  color: #d4d4d8;
+  font-size: 0.98rem;
+  line-height: 1.65;
+}
+
+.references li + li {
+  margin-top: 10px;
 }
 
 .article-footer {

@@ -638,7 +638,7 @@ def main() -> None:
     parser.add_argument("--cols", type=int, default=4)
     parser.add_argument("--c-puct", type=float, default=1.5)
     parser.add_argument("--opening-random-plies", type=int, default=2)
-    parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="cpu")
+    parser.add_argument("--mlx-device", choices=["cpu", "gpu"], default="gpu")
     parser.add_argument("--mcts-backend", choices=["python", "cpp"], default="cpp")
     parser.add_argument("--mcts-batch-size", type=int, default=8)
     parser.add_argument("--virtual-loss", type=float, default=1.0)
